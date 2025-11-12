@@ -2,6 +2,22 @@ const { app, BrowserWindow } = require('electron');
 const path = require('path');
 const { setupIpcHandlers } = require('./ipc-handlers');
 
+// Polyfill for File API (needed by undici/axios in Electron main process)
+if (typeof global.File === 'undefined') {
+  global.File = class File {
+    constructor(bits, name, options = {}) {
+      this.bits = bits;
+      this.name = name;
+      this.type = options.type || '';
+      this.lastModified = options.lastModified || Date.now();
+    }
+  };
+}
+
+if (typeof global.FormData === 'undefined') {
+  global.FormData = require('form-data');
+}
+
 // Handle creating/removing shortcuts on Windows when installing/uninstalling
 if (require('electron-squirrel-startup')) {
   app.quit();
