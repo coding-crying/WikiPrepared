@@ -5,7 +5,7 @@
  * Using constants prevents typos and makes refactoring easier.
  */
 
-export const IPC_CHANNELS = {
+const IPC_CHANNELS = {
   // Drive Management
   DRIVES_LIST: 'drives:list',
   DRIVES_INFO: 'drives:info',
@@ -65,7 +65,7 @@ export const IPC_CHANNELS = {
 };
 
 // Event channels that flow from main to renderer
-export const MAIN_TO_RENDERER_CHANNELS = [
+const MAIN_TO_RENDERER_CHANNELS = [
   IPC_CHANNELS.DRIVES_CHANGED,
   IPC_CHANNELS.DOWNLOAD_PROGRESS,
   IPC_CHANNELS.DOWNLOAD_COMPLETED,
@@ -74,7 +74,14 @@ export const MAIN_TO_RENDERER_CHANNELS = [
 ];
 
 // Channels that require elevated permissions (warnings)
-export const DANGEROUS_CHANNELS = [
+const DANGEROUS_CHANNELS = [
   IPC_CHANNELS.DRIVES_EJECT,
   IPC_CHANNELS.FILE_DELETE,
 ];
+
+// Export for CommonJS (main process) and ES6 (renderer via webpack)
+module.exports = {
+  IPC_CHANNELS,
+  MAIN_TO_RENDERER_CHANNELS,
+  DANGEROUS_CHANNELS,
+};
