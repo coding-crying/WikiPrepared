@@ -19,6 +19,10 @@ const { app, BrowserWindow } = require('electron');
 const path = require('path');
 const { setupIpcHandlers } = require('./ipc-handlers');
 
+// Declare webpack magic globals (injected by Electron Forge's webpack plugin)
+/* global MAIN_WINDOW_WEBPACK_ENTRY */
+/* global MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY */
+
 // Handle creating/removing shortcuts on Windows when installing/uninstalling
 if (require('electron-squirrel-startup')) {
   app.quit();
@@ -45,8 +49,11 @@ const createWindow = () => {
   });
 
   // Load the index.html of the app
-  if (MAIN_WINDOW_WEBPACK_ENTRY) {
+  if (typeof MAIN_WINDOW_WEBPACK_ENTRY !== "undefined") {
     mainWindow.loadURL(MAIN_WINDOW_WEBPACK_ENTRY);
+  } else {
+    // Fallback: load from webpack dev server directly
+    mainWindow.loadURL('http://localhost:9000');
   }
 
   // Show window when ready to show
