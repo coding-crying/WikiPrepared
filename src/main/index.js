@@ -1,0 +1,84 @@
+const { app, BrowserWindow } = require('electron');
+const path = require('path');
+const { setupIpcHandlers } = require('./ipc-handlers');
+
+// Handle creating/removing shortcuts on Windows when installing/uninstalling
+if (require('electron-squirrel-startup')) {
+  app.quit();
+}
+
+let mainWindow;
+
+/**
+ * Create the main application window
+ */
+const createWindow = () => {
+  mainWindow = new BrowserWindow({
+    width: 1200,
+    height: 800,
+    minWidth: 1000,
+    minHeight: 600,
+    icon: path.join(__dirname, '../../public/icons/icon.png'),
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: path.join(__dirname, 'preload.js'),
+    },
+    show: false, // Don't show until ready
+  });
+
+  // Load the index.html of the app
+  if (MAIN_WINDOW_WEBPACK_ENTRY) {
+    mainWindow.loadURL(MAIN_WINDOW_WEBPACK_ENTRY);
+  }
+
+  // Show window when ready to show
+  mainWindow.once('ready-to-show', () => {
+    mainWindow.show();
+  });
+
+  // Open DevTools in development
+  if (process.env.NODE_ENV === 'development') {
+    mainWindow.webContents.openDevTools();
+  }
+
+  // Cleanup on close
+  mainWindow.on('closed', () => {
+    mainWindow = null;
+  });
+};
+
+/**
+ * Initialize the application
+ */
+const initializeApp = () => {
+  // Set up IPC communication handlers
+  setupIpcHandlers();
+
+  // Create window
+  createWindow();
+
+  console.log('Kiwix USB Updater started');
+};
+
+// App lifecycle events
+app.whenReady().then(initializeApp);
+
+// Quit when all windows are closed, except on macOS
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') {
+    app.quit();
+  }
+});
+
+// On macOS, re-create window when dock icon is clicked
+app.on('activate', () => {
+  if (BrowserWindow.getAllWindows().length === 0) {
+    createWindow();
+  }
+});
+
+// Export for testing
+module.exports = {
+  getMainWindow: () => mainWindow,
+};
