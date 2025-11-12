@@ -1,8 +1,5 @@
-const { app, BrowserWindow } = require('electron');
-const path = require('path');
-const { setupIpcHandlers } = require('./ipc-handlers');
-
 // Polyfill for File API (needed by undici/axios in Electron main process)
+// MUST be defined BEFORE any requires that might load axios/undici
 if (typeof global.File === 'undefined') {
   global.File = class File {
     constructor(bits, name, options = {}) {
@@ -17,6 +14,10 @@ if (typeof global.File === 'undefined') {
 if (typeof global.FormData === 'undefined') {
   global.FormData = require('form-data');
 }
+
+const { app, BrowserWindow } = require('electron');
+const path = require('path');
+const { setupIpcHandlers } = require('./ipc-handlers');
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling
 if (require('electron-squirrel-startup')) {
