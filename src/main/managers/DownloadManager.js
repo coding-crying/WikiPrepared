@@ -54,7 +54,7 @@ class DownloadManager {
 
       console.log(`Added download to queue: ${zimInfo.filename}`);
 
-      return download;
+      return this.serializeDownload(download);
     } catch (error) {
       console.error('Error adding download to queue:', error);
       throw error;
@@ -146,7 +146,7 @@ class DownloadManager {
 
       this.emitProgress(downloadId);
 
-      return download;
+      return this.serializeDownload(download);
     } catch (error) {
       console.error(`Download failed: ${download.filename}`, error);
 
@@ -189,7 +189,7 @@ class DownloadManager {
 
     console.log(`Download paused: ${download.filename}`);
 
-    return download;
+    return this.serializeDownload(download);
   }
 
   /**
@@ -245,7 +245,7 @@ class DownloadManager {
 
     console.log(`Download cancelled: ${download.filename}`);
 
-    return download;
+    return this.serializeDownload(download);
   }
 
   /**
@@ -262,7 +262,7 @@ class DownloadManager {
    * @returns {Array} Array of download objects
    */
   getAllDownloads() {
-    return Array.from(this.downloads.values());
+    return Array.from(this.downloads.values()).map(download => this.serializeDownload(download));
   }
 
   /**
@@ -271,7 +271,7 @@ class DownloadManager {
    * @returns {Object} Download object
    */
   getDownload(downloadId) {
-    return this.downloads.get(downloadId);
+    return this.serializeDownload(this.downloads.get(downloadId));
   }
 
   /**
@@ -304,6 +304,32 @@ class DownloadManager {
         error: download.error,
       });
     }
+  }
+
+  /**
+   * Serialize download object for IPC (removes non-cloneable properties)
+   * @param {Object} download - Download object
+   * @returns {Object} Serializable download object
+   */
+  serializeDownload(download) {
+    if (!download) return null;
+
+    return {
+      id: download.id,
+      url: download.url,
+      filename: download.filename,
+      destination: download.destination,
+      status: download.status,
+      totalSize: download.totalSize,
+      downloadedSize: download.downloadedSize,
+      progress: download.progress,
+      speed: download.speed,
+      eta: download.eta,
+      error: download.error,
+      startTime: download.startTime,
+      endTime: download.endTime,
+      // Omit: cancelToken, zimInfo (contains non-serializable data)
+    };
   }
 
   /**
