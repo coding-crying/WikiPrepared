@@ -89,12 +89,44 @@ class ZimManager {
       const metadata = this.parseZimFilename(filename);
 
       if (metadata.valid) {
-        // Get file size from adjacent table cell (if available)
-        const sizeText = $(element).parent().next().text().trim();
-        const size = this.parseSize(sizeText);
+        let size = 0;
+        let sizeText = '';
+        let dateText = '';
 
-        // Get date from filename or parent row
-        const dateText = $(element).parent().next().next().text().trim();
+        // Try different methods to extract size from Apache directory listing
+        const parent = $(element).parent();
+
+        // Method 1: Check if parent is a table cell with siblings
+        if (parent.is('td')) {
+          const sizeTd = parent.next();
+          const dateTd = sizeTd.next();
+          sizeText = sizeTd.text().trim();
+          dateText = dateTd.text().trim();
+        } else {
+          // Method 2: Parse from text content after the link
+          // Apache listings typically format as: <a>filename</a>  date  size
+          const parentText = parent.text();
+          const linkText = $(element).text();
+          const afterLink = parentText.substring(parentText.indexOf(linkText) + linkText.length).trim();
+
+          // Split by whitespace and look for size pattern (ends with G, M, K, or just numbers)
+          const parts = afterLink.split(/\s+/).filter(p => p.length > 0);
+
+          // Look for size in parts (typically matches pattern like "1.5G" or "500M")
+          for (const part of parts) {
+            if (/^[\d.]+[KMGT]?$/i.test(part)) {
+              sizeText = part;
+              break;
+            }
+          }
+
+          // Date is usually first in format like "2024-01-15"
+          if (parts.length > 0 && /^\d{4}-\d{2}-\d{2}/.test(parts[0])) {
+            dateText = parts[0];
+          }
+        }
+
+        size = this.parseSize(sizeText);
 
         zims.push({
           filename,
