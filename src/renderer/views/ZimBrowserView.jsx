@@ -81,14 +81,14 @@ function ZimBrowserView() {
         ? selectedDrive.mountpoint
         : null; // Will use default download path
 
-      const downloadId = await window.electronAPI.invoke(
+      const download = await window.electronAPI.invoke(
         IPC_CHANNELS.DOWNLOAD_ADD,
         zim,
         destination
       );
 
-      setDownload(downloadId, {
-        id: downloadId,
+      setDownload(download.id, {
+        id: download.id,
         filename: zim.filename,
         url: zim.url,
         size: zim.size,
@@ -97,7 +97,7 @@ function ZimBrowserView() {
         destination: directToUSB ? selectedDrive.label : 'Downloads'
       });
 
-      await window.electronAPI.invoke(IPC_CHANNELS.DOWNLOAD_START, downloadId);
+      await window.electronAPI.invoke(IPC_CHANNELS.DOWNLOAD_START, download.id);
 
       addNotification({
         type: 'success',

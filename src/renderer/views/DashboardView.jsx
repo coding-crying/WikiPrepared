@@ -144,11 +144,11 @@ function DashboardView() {
               />
               <DriveDetailItem
                 label="Free Space"
-                value={formatBytes(selectedDrive.free || 0)}
+                value={formatBytes(selectedDrive.freeSpace || 0)}
               />
               <DriveDetailItem
                 label="File System"
-                value={selectedDrive.filesystemType || 'Unknown'}
+                value={selectedDrive.fileSystem || 'Unknown'}
               />
               <DriveDetailItem
                 label="Installed ZIMs"
@@ -176,7 +176,7 @@ function DashboardView() {
 }
 
 function DriveCard({ drive, isSelected, onSelect }) {
-  const usedPercent = ((drive.size - (drive.free || 0)) / drive.size) * 100;
+  const usedPercent = ((drive.size - (drive.freeSpace || 0)) / drive.size) * 100;
 
   return (
     <div

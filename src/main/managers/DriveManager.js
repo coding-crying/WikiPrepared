@@ -1,6 +1,8 @@
 const drivelist = require('drivelist');
 const fs = require('fs-extra');
 const path = require('path');
+const { execSync } = require('child_process');
+const os = require('os');
 const { ERROR_CODES } = require('../../shared/constants');
 
 /**
@@ -69,20 +71,118 @@ class DriveManager {
    */
   formatDriveInfo(drive) {
     const mountpoint = drive.mountpoints[0] || {};
+    const mountPath = mountpoint.path;
+
+    // Get filesystem info if mounted
+    let fileSystem = null;
+    let freeSpace = null;
+    let usedSpace = null;
+
+    if (mountPath) {
+      try {
+        const fsInfo = this.getFileSystemInfo(mountPath);
+        fileSystem = fsInfo.fileSystem;
+        freeSpace = fsInfo.freeSpace;
+        usedSpace = fsInfo.usedSpace;
+      } catch (error) {
+        console.warn(`Could not get filesystem info for ${mountPath}:`, error.message);
+      }
+    }
 
     return {
       device: drive.device,
       devicePath: drive.devicePath,
       displayName: drive.description || drive.device,
       label: mountpoint.label || 'Unnamed Drive',
-      mountpoint: mountpoint.path,
+      mountpoint: mountPath,
       size: drive.size,
+      fileSystem,
+      freeSpace,
+      usedSpace,
       isUSB: drive.isUSB,
       isRemovable: drive.isRemovable,
       isReadOnly: drive.isReadOnly,
       isSystem: drive.isSystem,
       busType: drive.busType,
       raw: drive.raw,
+    };
+  }
+
+  /**
+   * Get filesystem type and free space for a mounted drive
+   * @param {string} mountPath - Mount point path
+   * @returns {Object} Filesystem information
+   */
+  getFileSystemInfo(mountPath) {
+    const platform = os.platform();
+    let fileSystem = null;
+    let freeSpace = null;
+    let usedSpace = null;
+    let totalSpace = null;
+
+    try {
+      if (platform === 'linux') {
+        // Use df command on Linux
+        const output = execSync(`df -T "${mountPath}" | tail -1`, { encoding: 'utf8' });
+        const parts = output.trim().split(/\s+/);
+
+        if (parts.length >= 6) {
+          fileSystem = parts[1]; // Filesystem type (ext4, vfat, exfat, ntfs, etc.)
+          totalSpace = parseInt(parts[2], 10) * 1024; // Convert from KB to bytes
+          usedSpace = parseInt(parts[3], 10) * 1024;
+          freeSpace = parseInt(parts[4], 10) * 1024;
+        }
+      } else if (platform === 'darwin') {
+        // Use df on macOS
+        const output = execSync(`df -k "${mountPath}" | tail -1`, { encoding: 'utf8' });
+        const parts = output.trim().split(/\s+/);
+
+        if (parts.length >= 4) {
+          totalSpace = parseInt(parts[1], 10) * 1024; // Convert from KB to bytes
+          usedSpace = parseInt(parts[2], 10) * 1024;
+          freeSpace = parseInt(parts[3], 10) * 1024;
+        }
+
+        // Get filesystem type separately on macOS
+        try {
+          const fsOutput = execSync(`diskutil info "${mountPath}" | grep "Type (Bundle)"`, { encoding: 'utf8' });
+          const match = fsOutput.match(/Type \(Bundle\):\s+(.+)/);
+          if (match) {
+            fileSystem = match[1].trim();
+          }
+        } catch (e) {
+          // Fallback: try to get from mount command
+          const mountOutput = execSync(`mount | grep "${mountPath}"`, { encoding: 'utf8' });
+          const fsMatch = mountOutput.match(/\(([^,)]+)/);
+          if (fsMatch) {
+            fileSystem = fsMatch[1];
+          }
+        }
+      } else if (platform === 'win32') {
+        // Use wmic on Windows
+        const driveLetter = mountPath.charAt(0);
+        const output = execSync(`wmic logicaldisk where "DeviceID='${driveLetter}:'" get FileSystem,FreeSpace,Size /format:csv`, { encoding: 'utf8' });
+        const lines = output.trim().split('\n').filter(line => line.trim());
+
+        if (lines.length >= 2) {
+          const parts = lines[1].split(',');
+          if (parts.length >= 4) {
+            fileSystem = parts[1].trim();
+            freeSpace = parseInt(parts[2], 10);
+            totalSpace = parseInt(parts[3], 10);
+            usedSpace = totalSpace - freeSpace;
+          }
+        }
+      }
+    } catch (error) {
+      console.warn('Error getting filesystem info:', error.message);
+    }
+
+    return {
+      fileSystem: fileSystem || 'unknown',
+      freeSpace: freeSpace || 0,
+      usedSpace: usedSpace || 0,
+      totalSpace: totalSpace || 0,
     };
   }
 
