@@ -34,22 +34,12 @@ let mainWindow;
  * Create the main application window
  */
 const createWindow = () => {
-  // Electron Forge webpack plugin injects MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY at build time
-  // In development mode, this points to the webpack dev server's preload bundle
-  let preloadPath;
-
-  try {
-    // Try to use the webpack constant (it's injected by Electron Forge)
-    preloadPath = MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY;
-    console.log('Using webpack preload path:', preloadPath);
-  } catch (e) {
-    // Fallback for non-webpack execution (shouldn't happen with Electron Forge)
-    preloadPath = path.join(__dirname, 'preload.js');
-    console.log('Using fallback preload path:', preloadPath);
-    console.log('Warning: MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY not defined. Are you running through Electron Forge?');
-  }
+  // Electron Forge webpack plugin injects these constants at build time
+  const preloadPath = MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY;
+  const rendererUrl = MAIN_WINDOW_WEBPACK_ENTRY;
 
   console.log('Preload path:', preloadPath);
+  console.log('Renderer URL:', rendererUrl);
   console.log('Preload exists:', require('fs').existsSync(preloadPath));
 
   mainWindow = new BrowserWindow({
@@ -67,18 +57,8 @@ const createWindow = () => {
   });
 
   // Load the index.html of the app
-  // Electron Forge webpack plugin injects MAIN_WINDOW_WEBPACK_ENTRY
-  try {
-    const rendererUrl = MAIN_WINDOW_WEBPACK_ENTRY;
-    console.log('Loading from webpack entry:', rendererUrl);
-    mainWindow.loadURL(rendererUrl);
-  } catch (e) {
-    // Fallback for non-webpack execution (shouldn't happen with Electron Forge)
-    const fallbackUrl = 'http://localhost:3000/main_window/';
-    console.log('Loading from fallback:', fallbackUrl);
-    console.log('Warning: MAIN_WINDOW_WEBPACK_ENTRY not defined. Are you running through Electron Forge?');
-    mainWindow.loadURL(fallbackUrl);
-  }
+  console.log('Loading renderer from:', rendererUrl);
+  mainWindow.loadURL(rendererUrl);
 
   // Show window when ready to show
   mainWindow.once('ready-to-show', () => {
