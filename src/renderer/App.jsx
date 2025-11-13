@@ -7,6 +7,7 @@ import { IPC_CHANNELS } from '../shared/ipc-channels';
 import DashboardView from './views/DashboardView';
 import ZimBrowserView from './views/ZimBrowserView';
 import DownloadManagerView from './views/DownloadManagerView';
+import FlashUSBView from './views/FlashUSBView';
 import UpdateManagerView from './views/UpdateManagerView';
 import KiwixReaderView from './views/KiwixReaderView';
 import SettingsView from './views/SettingsView';
@@ -230,6 +231,7 @@ function App() {
             <Route path="/dashboard" element={<DashboardView />} />
             <Route path="/zim-browser" element={<ZimBrowserView />} />
             <Route path="/downloads" element={<DownloadManagerView />} />
+            <Route path="/flash-usb" element={<FlashUSBView />} />
             <Route path="/updates" element={<UpdateManagerView />} />
             <Route path="/kiwix-reader" element={<KiwixReaderView />} />
             <Route path="/settings" element={<SettingsView />} />

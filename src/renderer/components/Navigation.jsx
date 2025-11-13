@@ -14,6 +14,7 @@ function Navigation() {
     { path: '/dashboard', label: 'Dashboard', icon: '🏠' },
     { path: '/zim-browser', label: 'ZIM Browser', icon: '📚' },
     { path: '/downloads', label: 'Downloads', icon: '⬇️' },
+    { path: '/flash-usb', label: 'Flash USB', icon: '💾' },
     { path: '/updates', label: 'Updates', icon: '🔄' },
     { path: '/kiwix-reader', label: 'Kiwix Reader', icon: '📖' },
     { path: '/settings', label: 'Settings', icon: '⚙️' },
