@@ -292,7 +292,7 @@ function PlatformCard({ platform, version, isInstalled, isCurrentPlatform, isLoa
 
       {version && (
         <div style={styles.platformVersion}>
-          Latest Version: <strong>{version}</strong>
+          Latest Version: <strong>{version.version}</strong>
         </div>
       )}
 
