@@ -53,8 +53,10 @@ const createWindow = () => {
     console.log('Loading from WEBPACK_ENTRY:', MAIN_WINDOW_WEBPACK_ENTRY);
     mainWindow.loadURL(MAIN_WINDOW_WEBPACK_ENTRY);
   } else {
-    console.log('Loading from fallback: http://localhost:3000');
-    mainWindow.loadURL('http://localhost:3000');
+    // Fallback: webpack dev server serves from /main_window/ path
+    const fallbackUrl = 'http://localhost:3000/main_window/';
+    console.log('Loading from fallback:', fallbackUrl);
+    mainWindow.loadURL(fallbackUrl);
   }
 
   // Show window when ready to show
