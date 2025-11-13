@@ -2,7 +2,6 @@
   "name": "kiwix-usb-updater",
   "version": "0.1.0",
   "description": "A cross-platform desktop application for managing Kiwix reader installations and Wikipedia ZIM files on USB drives",
-  "main": "src/main/index.js",
   "author": "Your Name",
   "license": "GPL-3.0",
   "keywords": [
