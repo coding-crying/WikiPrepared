@@ -34,6 +34,13 @@ let mainWindow;
  * Create the main application window
  */
 const createWindow = () => {
+  const preloadPath = typeof MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY !== 'undefined'
+    ? MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY
+    : path.join(__dirname, 'preload.js');
+
+  console.log('Preload path:', preloadPath);
+  console.log('Preload exists:', require('fs').existsSync(preloadPath));
+
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
@@ -43,9 +50,7 @@ const createWindow = () => {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      preload: typeof MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY !== 'undefined'
-        ? MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY
-        : path.join(__dirname, 'preload.js'),
+      preload: preloadPath,
     },
     show: false, // Don't show until ready
   });

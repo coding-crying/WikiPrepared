@@ -4,6 +4,8 @@ import App from './App';
 import './styles/global.css';
 
 console.log('Starting Kiwix USB Updater renderer...');
+console.log('window.electronAPI defined:', typeof window.electronAPI !== 'undefined');
+console.log('window.electronAPI:', window.electronAPI);
 console.log('Looking for root element:', document.getElementById('root'));
 
 try {

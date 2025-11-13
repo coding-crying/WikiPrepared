@@ -1,5 +1,9 @@
+console.log('=== PRELOAD SCRIPT STARTING ===');
+
 const { contextBridge, ipcRenderer } = require('electron');
 const { IPC_CHANNELS, MAIN_TO_RENDERER_CHANNELS } = require('../shared/ipc-channels');
+
+console.log('Preload: Loaded dependencies');
 
 /**
  * Preload script that exposes a safe API to the renderer process
@@ -65,6 +69,8 @@ const api = {
 };
 
 // Expose the API to the renderer process
+console.log('Preload: Exposing electronAPI to main world...');
 contextBridge.exposeInMainWorld('electronAPI', api);
 
-console.log('Preload script loaded');
+console.log('=== PRELOAD SCRIPT COMPLETED ===');
+console.log('electronAPI should now be available in renderer');
