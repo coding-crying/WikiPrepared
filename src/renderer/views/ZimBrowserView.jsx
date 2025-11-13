@@ -32,6 +32,7 @@ function ZimBrowserView() {
   } = useStore();
 
   const [showFilters, setShowFilters] = useState(true);
+  const [displayLimit, setDisplayLimit] = useState(50); // Show 50 items initially
 
   useEffect(() => {
     // Load catalog on mount if not already loaded
@@ -39,6 +40,11 @@ function ZimBrowserView() {
       loadCatalog(false);
     }
   }, []);
+
+  // Reset display limit when filters change
+  useEffect(() => {
+    setDisplayLimit(50);
+  }, [filters, sortBy]);
 
   const loadCatalog = async (forceRefresh = false) => {
     try {
@@ -199,16 +205,28 @@ function ZimBrowserView() {
             </button>
           </div>
         ) : (
-          <div style={styles.zimGrid}>
-            {filteredZims.map((zim, index) => (
-              <ZimCard
-                key={index}
-                zim={zim}
-                onDownload={handleDownload}
-                hasSelectedDrive={!!selectedDrive}
-              />
-            ))}
-          </div>
+          <>
+            <div style={styles.zimGrid}>
+              {filteredZims.slice(0, displayLimit).map((zim, index) => (
+                <ZimCard
+                  key={index}
+                  zim={zim}
+                  onDownload={handleDownload}
+                  hasSelectedDrive={!!selectedDrive}
+                />
+              ))}
+            </div>
+            {filteredZims.length > displayLimit && (
+              <div style={styles.loadMoreContainer}>
+                <button
+                  style={styles.loadMoreButton}
+                  onClick={() => setDisplayLimit(prev => prev + 50)}
+                >
+                  Load More ({filteredZims.length - displayLimit} remaining)
+                </button>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>
@@ -684,6 +702,26 @@ const styles = {
     fontSize: '16px',
     color: '#757575',
     marginBottom: '20px',
+  },
+  loadMoreContainer: {
+    display: 'flex',
+    justifyContent: 'center',
+    padding: '32px 0',
+  },
+  loadMoreButton: {
+    padding: '12px 32px',
+    fontSize: '16px',
+    fontWeight: '600',
+    color: '#2196f3',
+    backgroundColor: 'white',
+    border: '2px solid #2196f3',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
+    '&:hover': {
+      backgroundColor: '#2196f3',
+      color: 'white',
+    },
   },
 };
 

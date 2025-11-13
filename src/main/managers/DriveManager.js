@@ -366,9 +366,9 @@ class DriveManager {
   /**
    * Start watching for drive changes
    * @param {Function} callback - Called when drives change
-   * @param {number} interval - Polling interval in ms (default 2000)
+   * @param {number} interval - Polling interval in ms (default 5000)
    */
-  startWatching(callback, interval = 2000) {
+  startWatching(callback, interval = 5000) {
     if (this.watchInterval) {
       this.stopWatching();
     }
