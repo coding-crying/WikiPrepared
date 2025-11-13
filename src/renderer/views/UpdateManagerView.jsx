@@ -70,7 +70,7 @@ function UpdateManagerView() {
       );
       setAvailableUpdates(updates);
 
-      const outdatedCount = updates.filter(u => u.updateStatus === 'outdated').length;
+      const outdatedCount = updates.filter(u => u.status === 'outdated').length;
       if (outdatedCount > 0) {
         addNotification({
           type: 'info',
@@ -158,12 +158,12 @@ function UpdateManagerView() {
 
   const selectAllOutdated = () => {
     const outdated = availableUpdates
-      .filter(u => u.updateStatus === 'outdated')
-      .map(u => u.filename);
+      .filter(u => u.status === 'outdated')
+      .map(u => u.installed.filename);
     setSelectedUpdates(outdated);
   };
 
-  const outdatedUpdates = availableUpdates.filter(u => u.updateStatus === 'outdated');
+  const outdatedUpdates = availableUpdates.filter(u => u.status === 'outdated');
 
   return (
     <div style={styles.container}>
@@ -223,7 +223,7 @@ function UpdateManagerView() {
               />
               <StatCard
                 label="Up to Date"
-                value={availableUpdates.filter(u => u.updateStatus === 'up_to_date').length}
+                value={availableUpdates.filter(u => u.status === 'up_to_date').length}
                 icon="✓"
                 color="#4caf50"
               />
@@ -235,7 +235,7 @@ function UpdateManagerView() {
               />
               <StatCard
                 label="Unknown"
-                value={availableUpdates.filter(u => u.updateStatus === 'unknown').length}
+                value={availableUpdates.filter(u => u.status === 'unknown').length}
                 icon="?"
                 color="#757575"
               />
@@ -280,8 +280,8 @@ function UpdateManagerView() {
                     <UpdateRow
                       key={index}
                       update={update}
-                      isSelected={selectedUpdates.includes(update.filename)}
-                      onToggleSelect={() => toggleSelectUpdate(update.filename)}
+                      isSelected={selectedUpdates.includes(update.installed.filename)}
+                      onToggleSelect={() => toggleSelectUpdate(update.installed.filename)}
                       onUpdate={handleUpdateSingle}
                     />
                   ))}
@@ -307,7 +307,7 @@ function StatCard({ label, value, icon, color }) {
 
 function UpdateRow({ update, isSelected, onToggleSelect, onUpdate }) {
   const getStatusInfo = () => {
-    switch (update.updateStatus) {
+    switch (update.status) {
       case 'up_to_date':
         return { label: 'Up to Date', color: '#4caf50', icon: '✓' };
       case 'outdated':
@@ -319,12 +319,12 @@ function UpdateRow({ update, isSelected, onToggleSelect, onUpdate }) {
       case 'newer':
         return { label: 'Newer than Online', color: '#2196f3', icon: '⭐' };
       default:
-        return { label: update.updateStatus, color: '#757575', icon: '?' };
+        return { label: update.status, color: '#757575', icon: '?' };
     }
   };
 
   const statusInfo = getStatusInfo();
-  const canUpdate = update.updateStatus === 'outdated';
+  const canUpdate = update.status === 'outdated';
 
   return (
     <div style={styles.tableRow}>
@@ -339,10 +339,10 @@ function UpdateRow({ update, isSelected, onToggleSelect, onUpdate }) {
         )}
       </div>
       <div style={styles.tableCell}>
-        <div style={styles.filename}>{update.filename}</div>
+        <div style={styles.filename}>{update.installed.filename}</div>
       </div>
-      <div style={styles.tableCell}>{update.installedVersion || 'N/A'}</div>
-      <div style={styles.tableCell}>{update.latestVersion || 'N/A'}</div>
+      <div style={styles.tableCell}>{update.installedDate || 'N/A'}</div>
+      <div style={styles.tableCell}>{update.latestDate || 'N/A'}</div>
       <div style={styles.tableCell}>
         <div
           style={{
