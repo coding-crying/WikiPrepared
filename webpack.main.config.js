@@ -10,8 +10,6 @@ module.exports = {
   resolve: {
     extensions: ['.js', '.jsx', '.json'],
   },
-  node: {
-    __dirname: false,
-    __filename: false,
-  },
+  // Note: We keep __dirname as the default (webpack will handle it correctly)
+  // Electron Forge's webpack plugin will inject the correct paths
 };
