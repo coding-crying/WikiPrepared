@@ -73,11 +73,11 @@ function Notification({ notification, onClose }) {
 const styles = {
   container: {
     position: 'fixed',
-    top: '80px',
+    bottom: '20px',
     right: '20px',
     zIndex: 9999,
     display: 'flex',
-    flexDirection: 'column',
+    flexDirection: 'column-reverse', // Stack from bottom up
     gap: '10px',
     maxWidth: '400px',
   },

@@ -20,6 +20,7 @@ function DashboardView() {
     setSelectedDrive,
     drivesLoading,
     addNotification,
+    setInstalledZims,
   } = useStore();
 
   useEffect(() => {
@@ -60,6 +61,9 @@ function DashboardView() {
         ...selectedDrive,
         installedZims: zimFiles
       });
+
+      // Also update the global installedZims state for Update Manager
+      setInstalledZims(zimFiles);
     } catch (error) {
       addNotification({
         type: 'error',
