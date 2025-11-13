@@ -6,6 +6,7 @@ const DownloadManager = require('./managers/DownloadManager');
 const KiwixManager = require('./managers/KiwixManager');
 const UpdateService = require('./services/UpdateService');
 const FileService = require('./services/FileService');
+const FlashService = require('./services/FlashService');
 
 // Initialize managers
 const driveManager = new DriveManager();
@@ -14,6 +15,7 @@ const downloadManager = new DownloadManager();
 const kiwixManager = new KiwixManager();
 const updateService = new UpdateService();
 const fileService = new FileService();
+const flashService = new FlashService();
 
 /**
  * Set up all IPC communication handlers
@@ -315,6 +317,74 @@ function setupIpcHandlers() {
 
   ipcMain.handle(IPC_CHANNELS.APP_SHOW_SAVE_DIALOG, async (event, options) => {
     return await dialog.showSaveDialog(options);
+  });
+
+  // ========================================
+  // Flash USB Handlers
+  // ========================================
+
+  ipcMain.handle(IPC_CHANNELS.FLASH_FORMAT_DRIVE, async (event, devicePath, filesystem, label) => {
+    try {
+      return await driveManager.formatDrive(devicePath, filesystem, label);
+    } catch (error) {
+      console.error('Error formatting drive:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.FLASH_CREATE_STRUCTURE, async (event, mountPath) => {
+    try {
+      return await flashService.createFolderStructure(mountPath);
+    } catch (error) {
+      console.error('Error creating folder structure:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.FLASH_COPY_ZIM, async (event, zimUrl, mountPath) => {
+    try {
+      const result = await flashService.copyZimFile(zimUrl, mountPath, (progress) => {
+        // Send progress updates to renderer
+        const windows = require('electron').BrowserWindow.getAllWindows();
+        windows.forEach((window) => {
+          window.webContents.send(IPC_CHANNELS.FLASH_PROGRESS, progress);
+        });
+      });
+      return result;
+    } catch (error) {
+      console.error('Error copying ZIM:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.FLASH_COPY_KIWIX, async (event, platforms, mountPath) => {
+    try {
+      return await flashService.copyKiwixReaders(platforms, mountPath);
+    } catch (error) {
+      console.error('Error copying Kiwix readers:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.FLASH_CREATE_METADATA, async (event, mountPath, metadata) => {
+    try {
+      return await flashService.createMetadata(mountPath, {
+        ...metadata,
+        appVersion: app.getVersion(),
+      });
+    } catch (error) {
+      console.error('Error creating metadata:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.FLASH_DETECT_METADATA, async (event, mountPath) => {
+    try {
+      return await flashService.detectMetadata(mountPath);
+    } catch (error) {
+      console.error('Error detecting metadata:', error);
+      throw error;
+    }
   });
 
   // ========================================

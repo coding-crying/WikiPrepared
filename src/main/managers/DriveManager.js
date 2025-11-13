@@ -364,6 +364,92 @@ class DriveManager {
   }
 
   /**
+   * Format a drive to a specific filesystem
+   * @param {string} devicePath - Device path (e.g., /dev/sdb, disk2)
+   * @param {string} filesystem - Filesystem type ('exfat', 'fat32', 'ntfs')
+   * @param {string} label - Volume label
+   * @returns {Promise<Object>} Result
+   */
+  async formatDrive(devicePath, filesystem = 'exfat', label = 'KIWIX_USB') {
+    const platform = os.platform();
+
+    try {
+      console.log(`[DriveManager] Formatting ${devicePath} to ${filesystem} with label "${label}"`);
+
+      // IMPORTANT: This is a destructive operation!
+      // Require sudo/admin privileges
+
+      if (platform === 'linux') {
+        // Linux: Use mkfs.exfat, mkfs.vfat, or mkfs.ntfs
+        let mkfsCommand;
+        if (filesystem === 'exfat') {
+          mkfsCommand = `mkfs.exfat -n "${label}" ${devicePath}`;
+        } else if (filesystem === 'fat32') {
+          mkfsCommand = `mkfs.vfat -F 32 -n "${label}" ${devicePath}`;
+        } else if (filesystem === 'ntfs') {
+          mkfsCommand = `mkfs.ntfs -f -L "${label}" ${devicePath}`;
+        } else {
+          throw new Error(`Unsupported filesystem: ${filesystem}`);
+        }
+
+        // NOTE: This requires sudo privileges
+        // You might need to run: sudo visudo and add NOPASSWD for mkfs commands
+        // Or handle privilege escalation differently
+        execSync(mkfsCommand, { encoding: 'utf8' });
+
+      } else if (platform === 'darwin') {
+        // macOS: Use diskutil
+        let fsType;
+        if (filesystem === 'exfat') {
+          fsType = 'ExFAT';
+        } else if (filesystem === 'fat32') {
+          fsType = 'MS-DOS FAT32';
+        } else if (filesystem === 'ntfs') {
+          // macOS doesn't natively support NTFS formatting
+          throw new Error('NTFS formatting not supported on macOS. Please use exFAT or FAT32.');
+        } else {
+          throw new Error(`Unsupported filesystem: ${filesystem}`);
+        }
+
+        execSync(`diskutil eraseDisk ${fsType} "${label}" ${devicePath}`, { encoding: 'utf8' });
+
+      } else if (platform === 'win32') {
+        // Windows: Use format command or PowerShell
+        const driveLetter = devicePath.replace(':', '');
+
+        let formatCmd;
+        if (filesystem === 'exfat') {
+          formatCmd = `format ${driveLetter}: /FS:exFAT /V:"${label}" /Q /Y`;
+        } else if (filesystem === 'fat32') {
+          formatCmd = `format ${driveLetter}: /FS:FAT32 /V:"${label}" /Q /Y`;
+        } else if (filesystem === 'ntfs') {
+          formatCmd = `format ${driveLetter}: /FS:NTFS /V:"${label}" /Q /Y`;
+        } else {
+          throw new Error(`Unsupported filesystem: ${filesystem}`);
+        }
+
+        // NOTE: Requires administrator privileges
+        execSync(formatCmd, { encoding: 'utf8' });
+
+      } else {
+        throw new Error(`Unsupported platform: ${platform}`);
+      }
+
+      console.log(`[DriveManager] Format complete: ${devicePath} -> ${filesystem}`);
+
+      return {
+        success: true,
+        devicePath,
+        filesystem,
+        label,
+      };
+    } catch (error) {
+      console.error('[DriveManager] Format error:', error);
+      throw new Error(`Failed to format drive: ${error.message}`);
+    }
+  }
+
+  /**
    * Start watching for drive changes
    * @param {Function} callback - Called when drives change
    * @param {number} interval - Polling interval in ms (default 5000)
