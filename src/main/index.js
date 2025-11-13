@@ -50,15 +50,30 @@ const createWindow = () => {
 
   // Load the index.html of the app
   if (typeof MAIN_WINDOW_WEBPACK_ENTRY !== "undefined") {
+    console.log('Loading from WEBPACK_ENTRY:', MAIN_WINDOW_WEBPACK_ENTRY);
     mainWindow.loadURL(MAIN_WINDOW_WEBPACK_ENTRY);
   } else {
-    // Fallback: load from webpack dev server directly
+    console.log('Loading from fallback: http://localhost:9000');
     mainWindow.loadURL('http://localhost:9000');
   }
 
   // Show window when ready to show
   mainWindow.once('ready-to-show', () => {
+    console.log('Window is ready to show!');
     mainWindow.show();
+  });
+
+  // Fallback: show window after 3 seconds if ready-to-show doesn't fire
+  setTimeout(() => {
+    if (!mainWindow.isVisible()) {
+      console.log('Window not shown yet, forcing visibility...');
+      mainWindow.show();
+    }
+  }, 3000);
+
+  // Log load errors
+  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
+    console.error('Failed to load:', errorCode, errorDescription);
   });
 
   // Open DevTools in development
