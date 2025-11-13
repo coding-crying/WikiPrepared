@@ -28,4 +28,10 @@ module.exports = {
       crypto: false,
     },
   },
+  node: {
+    // Disable Node.js globals in the renderer
+    __dirname: false,
+    __filename: false,
+    global: false,
+  },
 };
