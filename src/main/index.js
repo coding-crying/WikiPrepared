@@ -43,7 +43,9 @@ const createWindow = () => {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      preload: path.join(__dirname, 'preload.js'),
+      preload: typeof MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY !== 'undefined'
+        ? MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY
+        : path.join(__dirname, 'preload.js'),
     },
     show: false, // Don't show until ready
   });
