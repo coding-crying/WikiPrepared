@@ -1,10 +1,5 @@
-const rules = require('./webpack.rules');
+const rules = require('./webpack.renderer.rules'); // Use renderer-specific rules
 const path = require('path');
-
-rules.push({
-  test: /\.css$/,
-  use: [{ loader: 'style-loader' }, { loader: 'css-loader' }],
-});
 
 module.exports = {
   target: 'web', // Explicitly set target to web (not electron-renderer)
