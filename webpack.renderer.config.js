@@ -7,6 +7,7 @@ rules.push({
 });
 
 module.exports = {
+  target: 'web', // Explicitly set target to web (not electron-renderer)
   module: {
     rules,
   },
@@ -19,6 +20,12 @@ module.exports = {
       '@store': path.resolve(__dirname, 'src/renderer/store'),
       '@utils': path.resolve(__dirname, 'src/renderer/utils'),
       '@shared': path.resolve(__dirname, 'src/shared'),
+    },
+    fallback: {
+      // Don't polyfill Node.js core modules in the renderer
+      path: false,
+      fs: false,
+      crypto: false,
     },
   },
 };
