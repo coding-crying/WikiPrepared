@@ -161,6 +161,18 @@ function DashboardView() {
           </section>
         )}
 
+        {/* Installed ZIM Files */}
+        {selectedDrive && selectedDrive.installedZims && selectedDrive.installedZims.length > 0 && (
+          <section style={styles.section}>
+            <h2 style={styles.sectionTitle}>Installed ZIM Files ({selectedDrive.installedZims.length})</h2>
+            <div style={styles.zimList}>
+              {selectedDrive.installedZims.map((zim, index) => (
+                <ZimFileCard key={index} zimFile={zim} />
+              ))}
+            </div>
+          </section>
+        )}
+
         {/* Quick Actions */}
         <section style={styles.section}>
           <h2 style={styles.sectionTitle}>Quick Actions</h2>
@@ -207,8 +219,8 @@ function DriveCard({ drive, isSelected, onSelect }) {
         />
       </div>
       <div style={styles.driveCardFooter}>
-        <span>{formatBytes(drive.size - (drive.free || 0))} used</span>
-        <span>{formatBytes(drive.free || 0)} free</span>
+        <span>{formatBytes(drive.size - (drive.freeSpace || 0))} used</span>
+        <span>{formatBytes(drive.freeSpace || 0)} free</span>
       </div>
     </div>
   );
@@ -234,6 +246,81 @@ function QuickActionCard({ action }) {
       </div>
       <h3 style={styles.actionTitle}>{action.title}</h3>
       <p style={styles.actionDescription}>{action.description}</p>
+    </div>
+  );
+}
+
+function ZimFileCard({ zimFile }) {
+  const { filename, size, metadata } = zimFile;
+
+  // Generate a friendly display name from metadata
+  const getDisplayName = () => {
+    if (!metadata || !metadata.valid) {
+      return filename;
+    }
+
+    const parts = [];
+
+    // Add language name
+    if (metadata.languageName) {
+      parts.push(metadata.languageName);
+    } else if (metadata.language) {
+      parts.push(metadata.language.toUpperCase());
+    }
+
+    // Add source
+    if (metadata.source) {
+      parts.push(metadata.source.charAt(0).toUpperCase() + metadata.source.slice(1));
+    }
+
+    // Add topic if not "all"
+    if (metadata.topic && metadata.topic !== 'all') {
+      parts.push(`(${metadata.topic})`);
+    }
+
+    return parts.join(' ') || filename;
+  };
+
+  const getScopeLabel = (scope) => {
+    const labels = {
+      'mini': 'Mini',
+      'nopic': 'No Pictures',
+      'maxi': 'Full with Pictures',
+    };
+    return labels[scope] || scope;
+  };
+
+  const getScopeColor = (scope) => {
+    const colors = {
+      'mini': '#4caf50',
+      'nopic': '#ff9800',
+      'maxi': '#f44336',
+    };
+    return colors[scope] || '#757575';
+  };
+
+  return (
+    <div style={styles.zimFileCard}>
+      <div style={styles.zimFileHeader}>
+        <div style={styles.zimFileName}>{getDisplayName()}</div>
+        {metadata && metadata.scope && (
+          <div
+            style={{
+              ...styles.zimScopeBadge,
+              backgroundColor: getScopeColor(metadata.scope)
+            }}
+          >
+            {getScopeLabel(metadata.scope)}
+          </div>
+        )}
+      </div>
+      <div style={styles.zimFileDetails}>
+        <span style={styles.zimFileDetail}>📁 {filename}</span>
+        <span style={styles.zimFileDetail}>💾 {formatBytes(size)}</span>
+        {metadata && metadata.date && (
+          <span style={styles.zimFileDetail}>📅 {metadata.date}</span>
+        )}
+      </div>
     </div>
   );
 }
@@ -436,6 +523,47 @@ const styles = {
   actionDescription: {
     margin: 0,
     fontSize: '14px',
+    color: '#616161',
+  },
+  zimList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '12px',
+  },
+  zimFileCard: {
+    padding: '16px',
+    backgroundColor: '#fafafa',
+    borderRadius: '8px',
+    border: '1px solid #e0e0e0',
+    transition: 'all 0.2s ease',
+  },
+  zimFileHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '12px',
+  },
+  zimFileName: {
+    fontSize: '16px',
+    fontWeight: '600',
+    color: '#212121',
+    flex: 1,
+  },
+  zimScopeBadge: {
+    padding: '4px 12px',
+    color: 'white',
+    borderRadius: '12px',
+    fontSize: '12px',
+    fontWeight: '600',
+    marginLeft: '12px',
+  },
+  zimFileDetails: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '16px',
+  },
+  zimFileDetail: {
+    fontSize: '13px',
     color: '#616161',
   },
 };
