@@ -128,6 +128,11 @@ class ZimManager {
 
         size = this.parseSize(sizeText);
 
+        // Debug log first few entries to help troubleshoot
+        if (i < 3) {
+          console.log(`[ZimManager] Parsed ZIM: ${filename}, sizeText: "${sizeText}", size: ${size} bytes`);
+        }
+
         zims.push({
           filename,
           url: URLS.WIKIMEDIA_DUMPS + filename,
@@ -140,6 +145,7 @@ class ZimManager {
       }
     });
 
+    console.log(`[ZimManager] Total ZIMs parsed: ${zims.length}`);
     return zims;
   }
 
