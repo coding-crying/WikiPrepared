@@ -1,4 +1,4 @@
-const { ipcMain, app } = require('electron');
+const { ipcMain, app, dialog } = require('electron');
 const { IPC_CHANNELS } = require('../shared/ipc-channels');
 const DriveManager = require('./managers/DriveManager');
 const ZimManager = require('./managers/ZimManager');
@@ -307,6 +307,55 @@ function setupIpcHandlers() {
 
   ipcMain.handle(IPC_CHANNELS.APP_QUIT, () => {
     app.quit();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.APP_SHOW_OPEN_DIALOG, async (event, options) => {
+    return await dialog.showOpenDialog(options);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.APP_SHOW_SAVE_DIALOG, async (event, options) => {
+    return await dialog.showSaveDialog(options);
+  });
+
+  // ========================================
+  // Settings Handlers
+  // ========================================
+
+  // Simple in-memory settings for now
+  // TODO: Implement persistent settings storage
+  let appSettings = {
+    downloadPath: '',
+    autoDeleteOldVersions: false,
+    verifyChecksums: true,
+    maxConcurrentDownloads: 2,
+    bandwidthLimit: 0,
+    updateCheckFrequency: 'manual',
+    theme: 'light',
+    downloadDirectToUSB: false
+  };
+
+  ipcMain.handle(IPC_CHANNELS.SETTINGS_GET, () => {
+    return appSettings;
+  });
+
+  ipcMain.handle(IPC_CHANNELS.SETTINGS_SET, (event, newSettings) => {
+    appSettings = { ...appSettings, ...newSettings };
+    // TODO: Save to disk
+    return appSettings;
+  });
+
+  ipcMain.handle(IPC_CHANNELS.SETTINGS_RESET, () => {
+    appSettings = {
+      downloadPath: '',
+      autoDeleteOldVersions: false,
+      verifyChecksums: true,
+      maxConcurrentDownloads: 2,
+      bandwidthLimit: 0,
+      updateCheckFrequency: 'manual',
+      theme: 'light',
+      downloadDirectToUSB: false
+    };
+    return appSettings;
   });
 
   console.log('IPC handlers set up successfully');
