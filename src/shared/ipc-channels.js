@@ -57,6 +57,15 @@ const IPC_CHANNELS = {
   SETTINGS_SET: 'settings:set',
   SETTINGS_RESET: 'settings:reset',
 
+  // Flash USB Operations
+  FLASH_FORMAT_DRIVE: 'flash:format-drive',
+  FLASH_CREATE_STRUCTURE: 'flash:create-structure',
+  FLASH_COPY_ZIM: 'flash:copy-zim',
+  FLASH_COPY_KIWIX: 'flash:copy-kiwix',
+  FLASH_CREATE_METADATA: 'flash:create-metadata',
+  FLASH_DETECT_METADATA: 'flash:detect-metadata',
+  FLASH_PROGRESS: 'flash:progress', // Event
+
   // Application
   APP_GET_VERSION: 'app:get-version',
   APP_QUIT: 'app:quit',
@@ -71,12 +80,14 @@ const MAIN_TO_RENDERER_CHANNELS = [
   IPC_CHANNELS.DOWNLOAD_COMPLETED,
   IPC_CHANNELS.DOWNLOAD_ERROR,
   IPC_CHANNELS.FILE_OPERATION_PROGRESS,
+  IPC_CHANNELS.FLASH_PROGRESS,
 ];
 
 // Channels that require elevated permissions (warnings)
 const DANGEROUS_CHANNELS = [
   IPC_CHANNELS.DRIVES_EJECT,
   IPC_CHANNELS.FILE_DELETE,
+  IPC_CHANNELS.FLASH_FORMAT_DRIVE,
 ];
 
 // Export for CommonJS (main process) and ES6 (renderer via webpack)
