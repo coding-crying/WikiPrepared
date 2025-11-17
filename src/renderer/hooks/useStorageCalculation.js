@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { useAppFlowStore } from '../stores/appFlowStore';
+import { useDrivesStore } from '../stores/drivesStore';
 import { READER_SIZES } from '../utils/constants';
 
 /**
@@ -9,6 +10,7 @@ export function useStorageCalculation() {
   const selectedZims = useAppFlowStore(state => state.selectedZims);
   const selectedReaders = useAppFlowStore(state => state.selectedReaders);
   const selectedDrive = useAppFlowStore(state => state.selectedDrive);
+  const allDrives = useDrivesStore(state => state.drives);
 
   return useMemo(() => {
     // Calculate ZIM size
@@ -23,11 +25,30 @@ export function useStorageCalculation() {
     // Total size needed
     const totalSize = zimSize + readerSize;
 
-    // Available space (Infinity if no drive selected, i.e., local download)
-    const availableSpace = selectedDrive ? selectedDrive.size : Infinity;
+    // Available space
+    let availableSpace;
+    let usedSpace = 0;
 
-    // Used space on drive (if updating existing stick)
-    const usedSpace = selectedDrive ? (selectedDrive.used || 0) : 0;
+    if (selectedDrive) {
+      // USB drive selected - use its capacity
+      availableSpace = selectedDrive.size;
+      usedSpace = selectedDrive.used || 0;
+    } else {
+      // Local download - find system drive (mounted at / or C:\)
+      const systemDrive = allDrives.find(d => {
+        const mountpoints = d.mountpoints || [];
+        return mountpoints.some(mp => mp.path === '/' || mp.path === 'C:\\' || mp.path === 'C:/');
+      });
+
+      if (systemDrive) {
+        availableSpace = systemDrive.size;
+        usedSpace = systemDrive.used || 0;
+      } else {
+        // Fallback: estimate 500GB for system drive
+        availableSpace = 500 * 1024 * 1024 * 1024; // 500 GB in bytes
+        usedSpace = 0;
+      }
+    }
 
     // Free space after selection
     const freeSpace = availableSpace - usedSpace - totalSize;
@@ -51,5 +72,5 @@ export function useStorageCalculation() {
       percentUsed,
       isLocalDownload: !selectedDrive
     };
-  }, [selectedZims, selectedReaders, selectedDrive]);
+  }, [selectedZims, selectedReaders, selectedDrive, allDrives]);
 }

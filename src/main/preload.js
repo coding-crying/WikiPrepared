@@ -135,6 +135,14 @@ const api = {
     ipcRenderer.removeAllListeners(channel);
   },
 
+  // Alias for removeAllListeners (for convenience)
+  off: (channel) => {
+    if (!MAIN_TO_RENDERER_CHANNELS.includes(channel)) {
+      throw new Error(`Invalid event channel: ${channel}`);
+    }
+    ipcRenderer.removeAllListeners(channel);
+  },
+
   // App information
   getAppVersion: () => ipcRenderer.invoke(IPC_CHANNELS.APP_GET_VERSION),
 

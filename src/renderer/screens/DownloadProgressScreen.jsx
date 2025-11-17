@@ -67,13 +67,13 @@ export default function DownloadProgressScreen() {
         });
       }
 
-      // Queue reader downloads
-      for (const platform of selectedReaders) {
-        await window.electronAPI.invoke('download:add-reader', {
-          platform,
-          destination
-        });
-      }
+      // TODO: Queue reader downloads (not yet implemented in backend)
+      // for (const platform of selectedReaders) {
+      //   await window.electronAPI.invoke('download:add-reader', {
+      //     platform,
+      //     destination
+      //   });
+      // }
 
       // Start all downloads
       await window.electronAPI.invoke('download:start-all');

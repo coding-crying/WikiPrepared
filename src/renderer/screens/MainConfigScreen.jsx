@@ -183,15 +183,20 @@ export default function MainConfigScreen() {
               <FormControl fullWidth sx={{ mb: 2 }}>
                 <InputLabel>Language</InputLabel>
                 <Select
-                  value={selectedLanguage}
+                  value={availableLanguages.includes(selectedLanguage) ? selectedLanguage : ''}
                   onChange={(e) => setLanguage(e.target.value)}
                   label="Language"
+                  disabled={availableLanguages.length === 0}
                 >
-                  {availableLanguages.map((lang) => (
-                    <MenuItem key={lang} value={lang}>
-                      {getLanguageName(lang)}
-                    </MenuItem>
-                  ))}
+                  {availableLanguages.length === 0 ? (
+                    <MenuItem value="">Loading languages...</MenuItem>
+                  ) : (
+                    availableLanguages.map((lang) => (
+                      <MenuItem key={lang} value={lang}>
+                        {getLanguageName(lang)}
+                      </MenuItem>
+                    ))
+                  )}
                 </Select>
               </FormControl>
 
