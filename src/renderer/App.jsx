@@ -15,6 +15,9 @@ import DownloadProgressScreen from './screens/DownloadProgressScreen';
 import TransferProgressScreen from './screens/TransferProgressScreen';
 import CompletionScreen from './screens/CompletionScreen';
 
+// Debug component (only in development)
+import ElectronAPIDebug from './components/common/ElectronAPIDebug';
+
 import { ROUTES } from './utils/constants';
 
 /**
@@ -25,6 +28,8 @@ export default function App() {
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
+      {/* Debug helper - remove in production */}
+      {process.env.NODE_ENV === 'development' && <ElectronAPIDebug />}
       <Router>
         <Routes>
           {/* Redirect root to start */}
