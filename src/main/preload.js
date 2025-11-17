@@ -1,17 +1,36 @@
 console.log('=== PRELOAD SCRIPT STARTING ===');
+console.log('Preload: __dirname =', __dirname);
+console.log('Preload: process.cwd() =', process.cwd());
 
 let contextBridge, ipcRenderer, IPC_CHANNELS, MAIN_TO_RENDERER_CHANNELS;
 
 try {
   ({ contextBridge, ipcRenderer } = require('electron'));
-  console.log('Preload: Loaded electron dependencies');
+  console.log('Preload: ✓ Loaded electron dependencies');
+  console.log('Preload: contextBridge available:', !!contextBridge);
+  console.log('Preload: ipcRenderer available:', !!ipcRenderer);
 
-  ({ IPC_CHANNELS, MAIN_TO_RENDERER_CHANNELS } = require('../shared/ipc-channels'));
-  console.log('Preload: Loaded IPC channels');
+  // Try multiple paths for ipc-channels
+  let channelsPath = '../shared/ipc-channels';
+  try {
+    ({ IPC_CHANNELS, MAIN_TO_RENDERER_CHANNELS } = require(channelsPath));
+    console.log('Preload: ✓ Loaded IPC channels from relative path');
+  } catch (e) {
+    console.log('Preload: Relative path failed, trying absolute...');
+    const path = require('path');
+    channelsPath = path.join(__dirname, '..', 'shared', 'ipc-channels');
+    console.log('Preload: Trying absolute path:', channelsPath);
+    ({ IPC_CHANNELS, MAIN_TO_RENDERER_CHANNELS } = require(channelsPath));
+    console.log('Preload: ✓ Loaded IPC channels from absolute path');
+  }
+
+  console.log('Preload: IPC_CHANNELS loaded:', !!IPC_CHANNELS);
+  console.log('Preload: Sample channels:', Object.keys(IPC_CHANNELS).slice(0, 3));
   console.log('Preload: All dependencies loaded successfully');
 } catch (error) {
-  console.error('Preload: Error loading dependencies:', error);
-  console.error('Stack trace:', error.stack);
+  console.error('Preload: ❌ Error loading dependencies:', error);
+  console.error('Preload: Error message:', error.message);
+  console.error('Preload: Stack trace:', error.stack);
   throw error;
 }
 
@@ -81,15 +100,27 @@ const api = {
 // Expose the API to the renderer process
 console.log('Preload: Exposing electronAPI to main world...');
 console.log('Preload: API object keys:', Object.keys(api));
+console.log('Preload: contextBridge type:', typeof contextBridge);
+console.log('Preload: contextBridge.exposeInMainWorld type:', typeof contextBridge.exposeInMainWorld);
 
 try {
   contextBridge.exposeInMainWorld('electronAPI', api);
-  console.log('Preload: Successfully exposed electronAPI to main world');
+  console.log('Preload: ✓ Successfully exposed electronAPI to main world');
+  console.log('Preload: ✓ API should now be available as window.electronAPI');
 } catch (error) {
-  console.error('Preload: Error exposing electronAPI:', error);
-  console.error('Stack trace:', error.stack);
+  console.error('Preload: ❌ Error exposing electronAPI:', error);
+  console.error('Preload: Error message:', error.message);
+  console.error('Preload: Stack trace:', error.stack);
+
+  // Try to provide helpful debugging info
+  console.error('Preload: Debug info:');
+  console.error('  - contextBridge available:', !!contextBridge);
+  console.error('  - api object:', !!api);
+  console.error('  - api keys:', api ? Object.keys(api) : 'N/A');
+
   throw error;
 }
 
-console.log('=== PRELOAD SCRIPT COMPLETED ===');
-console.log('electronAPI should now be available in renderer with methods:', Object.keys(api));
+console.log('=== PRELOAD SCRIPT COMPLETED SUCCESSFULLY ===');
+console.log('Preload: electronAPI exposed with methods:', Object.keys(api));
+console.log('Preload: The renderer should now have access to window.electronAPI');

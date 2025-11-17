@@ -124,7 +124,7 @@ const initializeApp = async () => {
 
   // Start drive watching automatically
   // This ensures drives are detected as soon as the app starts
-  const { DriveManager } = require('./managers/DriveManager');
+  const DriveManager = require('./managers/DriveManager');
   const driveManager = new DriveManager();
 
   try {
