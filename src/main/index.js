@@ -133,7 +133,7 @@ const initializeApp = async () => {
     console.log(`Initial scan found ${drives.length} drive(s)`);
 
     // Start watching for drive changes
-    driveManager.watchDrives((drives) => {
+    driveManager.startWatching((drives) => {
       console.log('Drives changed, notifying renderer...');
       if (mainWindow && mainWindow.webContents) {
         mainWindow.webContents.send('drives:changed', drives);

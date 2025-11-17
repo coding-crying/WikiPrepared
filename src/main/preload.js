@@ -10,19 +10,9 @@ try {
   console.log('Preload: contextBridge available:', !!contextBridge);
   console.log('Preload: ipcRenderer available:', !!ipcRenderer);
 
-  // Try multiple paths for ipc-channels
-  let channelsPath = '../shared/ipc-channels';
-  try {
-    ({ IPC_CHANNELS, MAIN_TO_RENDERER_CHANNELS } = require(channelsPath));
-    console.log('Preload: ✓ Loaded IPC channels from relative path');
-  } catch (e) {
-    console.log('Preload: Relative path failed, trying absolute...');
-    const path = require('path');
-    channelsPath = path.join(__dirname, '..', 'shared', 'ipc-channels');
-    console.log('Preload: Trying absolute path:', channelsPath);
-    ({ IPC_CHANNELS, MAIN_TO_RENDERER_CHANNELS } = require(channelsPath));
-    console.log('Preload: ✓ Loaded IPC channels from absolute path');
-  }
+  // Load IPC channels - static require to avoid webpack warnings
+  ({ IPC_CHANNELS, MAIN_TO_RENDERER_CHANNELS } = require('../shared/ipc-channels'));
+  console.log('Preload: ✓ Loaded IPC channels');
 
   console.log('Preload: IPC_CHANNELS loaded:', !!IPC_CHANNELS);
   console.log('Preload: Sample channels:', Object.keys(IPC_CHANNELS).slice(0, 3));
