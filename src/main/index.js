@@ -113,14 +113,37 @@ const createWindow = () => {
 /**
  * Initialize the application
  */
-const initializeApp = () => {
+const initializeApp = async () => {
   // Set up IPC communication handlers
   setupIpcHandlers();
 
   // Create window
   createWindow();
 
-  console.log('Kiwix USB Updater started');
+  console.log('WikiPrepared started - Redesigned UI active');
+
+  // Start drive watching automatically
+  // This ensures drives are detected as soon as the app starts
+  const { DriveManager } = require('./managers/DriveManager');
+  const driveManager = new DriveManager();
+
+  try {
+    // Initial drive scan
+    const drives = await driveManager.listDrives();
+    console.log(`Initial scan found ${drives.length} drive(s)`);
+
+    // Start watching for drive changes
+    driveManager.watchDrives((drives) => {
+      console.log('Drives changed, notifying renderer...');
+      if (mainWindow && mainWindow.webContents) {
+        mainWindow.webContents.send('drives:changed', drives);
+      }
+    });
+
+    console.log('Drive watching started');
+  } catch (error) {
+    console.error('Failed to initialize drive scanning:', error);
+  }
 };
 
 // App lifecycle events
