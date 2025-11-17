@@ -11,7 +11,7 @@ import {
   Paper,
   Divider
 } from '@mui/material';
-import { Pause, PlayArrow, Cancel } from '@mui/icons-material';
+import { Pause, PlayArrow, Cancel, ArrowBack } from '@mui/icons-material';
 import { useAppFlowStore } from '../stores/appFlowStore';
 import ProgressBar from '../components/common/ProgressBar';
 import AppLayout from '../components/layout/AppLayout';
@@ -53,10 +53,25 @@ export default function DownloadProgressScreen() {
 
   const startDownloads = async () => {
     try {
+      // TODO: FEATURE - Local Download Persistence
+      // When downloading locally (destination = null), files should be saved to a persistent
+      // cache directory (e.g., ~/WikiPrepared/cache or AppData/WikiPrepared/cache).
+      // This allows users to:
+      // 1. Download large ZIM files once
+      // 2. Flash multiple USB sticks from the cached files without re-downloading
+      // 3. Resume interrupted downloads
+      // 4. Manage cached files (view size, delete old files, etc.)
+      //
+      // Implementation needs:
+      // - Dedicated cache directory path from main process
+      // - Cache management UI in settings
+      // - File integrity verification (checksums)
+      // - Detection of existing cached files before downloading
+
       // Determine destination
       const destination = downloadStrategy === DOWNLOAD_STRATEGIES.DIRECT_TO_USB
         ? selectedDrive?.mountpoints?.[0]?.path
-        : null; // null means local downloads folder
+        : null; // null means local downloads folder (TODO: should be persistent cache path)
 
       // Queue ZIM downloads
       for (const zim of selectedZims) {
@@ -130,6 +145,18 @@ export default function DownloadProgressScreen() {
       navigate(ROUTES.CONFIGURE);
     } catch (error) {
       console.error('Failed to cancel:', error);
+    }
+  };
+
+  const handleBack = async () => {
+    if (!confirm('Going back will cancel all downloads. Continue?')) return;
+
+    try {
+      await window.electronAPI.invoke('download:cancel-all');
+      navigate(ROUTES.DOWNLOAD_STRATEGY);
+    } catch (error) {
+      console.error('Failed to cancel:', error);
+      navigate(ROUTES.DOWNLOAD_STRATEGY);
     }
   };
 
@@ -220,22 +247,31 @@ export default function DownloadProgressScreen() {
         </Paper>
 
         {/* Controls */}
-        <Box sx={{ display: 'flex', gap: 2, mt: 3, justifyContent: 'center' }}>
+        <Box sx={{ display: 'flex', gap: 2, mt: 3, justifyContent: 'space-between', flexWrap: 'wrap' }}>
           <Button
             variant="outlined"
-            startIcon={isPaused ? <PlayArrow /> : <Pause />}
-            onClick={handlePauseResume}
+            startIcon={<ArrowBack />}
+            onClick={handleBack}
           >
-            {isPaused ? 'Resume' : 'Pause'}
+            Back
           </Button>
-          <Button
-            variant="outlined"
-            color="error"
-            startIcon={<Cancel />}
-            onClick={handleCancel}
-          >
-            Cancel
-          </Button>
+          <Box sx={{ display: 'flex', gap: 2 }}>
+            <Button
+              variant="outlined"
+              startIcon={isPaused ? <PlayArrow /> : <Pause />}
+              onClick={handlePauseResume}
+            >
+              {isPaused ? 'Resume' : 'Pause'}
+            </Button>
+            <Button
+              variant="outlined"
+              color="error"
+              startIcon={<Cancel />}
+              onClick={handleCancel}
+            >
+              Cancel
+            </Button>
+          </Box>
         </Box>
       </Box>
     </AppLayout>

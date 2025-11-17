@@ -44,12 +44,11 @@ export default function InitialChoiceScreen() {
       <Box
         sx={{
           display: 'flex',
-          flexDirection: 'column',
+          flexDirection: { xs: 'column', md: 'row' },
           gap: 3,
-          maxWidth: 600,
-          mx: 'auto',
           flex: 1,
-          justifyContent: 'center'
+          justifyContent: 'center',
+          alignItems: 'center'
         }}
       >
         {choices.map(({ intent, icon: Icon, title, description, color }) => (
@@ -58,6 +57,8 @@ export default function InitialChoiceScreen() {
             sx={{
               cursor: 'pointer',
               transition: 'all 0.2s ease-in-out',
+              flex: 1,
+              maxWidth: { xs: '100%', md: 400 },
               '&:hover': {
                 transform: 'translateY(-4px)',
                 boxShadow: 6

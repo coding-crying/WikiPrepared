@@ -24,9 +24,13 @@ const IPC_CHANNELS = {
   // Download Management
   DOWNLOAD_ADD: 'download:add',
   DOWNLOAD_START: 'download:start',
+  DOWNLOAD_START_ALL: 'download:start-all',
   DOWNLOAD_PAUSE: 'download:pause',
+  DOWNLOAD_PAUSE_ALL: 'download:pause-all',
   DOWNLOAD_RESUME: 'download:resume',
+  DOWNLOAD_RESUME_ALL: 'download:resume-all',
   DOWNLOAD_CANCEL: 'download:cancel',
+  DOWNLOAD_CANCEL_ALL: 'download:cancel-all',
   DOWNLOAD_REMOVE: 'download:remove',
   DOWNLOAD_GET_ALL: 'download:get-all',
   DOWNLOAD_PROGRESS: 'download:progress', // Event from main to renderer
