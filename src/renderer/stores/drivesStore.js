@@ -50,7 +50,7 @@ export const useDrivesStore = create(
 
         if (get().isWatching) return;
 
-        window.electronAPI.invoke('drives:watch-start');
+        window.electronAPI.invoke('drives:watch:start');
 
         // Listen for drive changes
         window.electronAPI.on('drives:changed', (drives) => {
@@ -64,7 +64,7 @@ export const useDrivesStore = create(
       stopWatching: () => {
         if (!checkElectronAPI()) return;
 
-        window.electronAPI.invoke('drives:watch-stop');
+        window.electronAPI.invoke('drives:watch:stop');
         window.electronAPI.off('drives:changed');
         set({ isWatching: false });
       },
