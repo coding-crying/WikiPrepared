@@ -258,11 +258,38 @@ class DownloadManager {
   }
 
   /**
+   * Serialize a download object for IPC (removes non-serializable properties)
+   * @param {Object} download - Download object
+   * @returns {Object} Serializable download object
+   */
+  serializeDownload(download) {
+    if (!download) return null;
+
+    return {
+      id: download.id,
+      url: download.url,
+      filename: download.filename,
+      destination: download.destination,
+      zimInfo: download.zimInfo,
+      status: download.status,
+      totalSize: download.totalSize,
+      downloadedSize: download.downloadedSize,
+      progress: download.progress,
+      speed: download.speed,
+      eta: download.eta,
+      error: download.error,
+      startTime: download.startTime,
+      endTime: download.endTime,
+      // Exclude: cancelToken (not serializable)
+    };
+  }
+
+  /**
    * Get all downloads
    * @returns {Array} Array of download objects
    */
   getAllDownloads() {
-    return Array.from(this.downloads.values());
+    return Array.from(this.downloads.values()).map(d => this.serializeDownload(d));
   }
 
   /**
@@ -271,7 +298,7 @@ class DownloadManager {
    * @returns {Object} Download object
    */
   getDownload(downloadId) {
-    return this.downloads.get(downloadId);
+    return this.serializeDownload(this.downloads.get(downloadId));
   }
 
   /**
@@ -279,7 +306,9 @@ class DownloadManager {
    * @returns {Promise<Array>} Array of started downloads
    */
   async startAllDownloads() {
-    const queuedDownloads = this.getAllDownloads().filter(
+    // Get raw downloads to access status
+    const allDownloads = Array.from(this.downloads.values());
+    const queuedDownloads = allDownloads.filter(
       d => d.status === DOWNLOAD_STATUS.QUEUED
     );
 
@@ -289,7 +318,7 @@ class DownloadManager {
     for (const download of queuedDownloads) {
       try {
         const result = await this.startDownload(download.id);
-        results.push(result);
+        results.push(this.serializeDownload(result));
       } catch (error) {
         console.error(`Failed to start download ${download.filename}:`, error);
         results.push({ id: download.id, error: error.message });
@@ -304,7 +333,9 @@ class DownloadManager {
    * @returns {Promise<Array>} Array of paused downloads
    */
   async pauseAllDownloads() {
-    const activeDownloads = this.getAllDownloads().filter(
+    // Get raw downloads to access status
+    const allDownloads = Array.from(this.downloads.values());
+    const activeDownloads = allDownloads.filter(
       d => d.status === DOWNLOAD_STATUS.DOWNLOADING
     );
 
@@ -314,7 +345,7 @@ class DownloadManager {
     for (const download of activeDownloads) {
       try {
         const result = await this.pauseDownload(download.id);
-        results.push(result);
+        results.push(this.serializeDownload(result));
       } catch (error) {
         console.error(`Failed to pause download ${download.filename}:`, error);
         results.push({ id: download.id, error: error.message });
@@ -329,7 +360,9 @@ class DownloadManager {
    * @returns {Promise<Array>} Array of resumed downloads
    */
   async resumeAllDownloads() {
-    const pausedDownloads = this.getAllDownloads().filter(
+    // Get raw downloads to access status
+    const allDownloads = Array.from(this.downloads.values());
+    const pausedDownloads = allDownloads.filter(
       d => d.status === DOWNLOAD_STATUS.PAUSED
     );
 
@@ -339,7 +372,7 @@ class DownloadManager {
     for (const download of pausedDownloads) {
       try {
         const result = await this.resumeDownload(download.id);
-        results.push(result);
+        results.push(this.serializeDownload(result));
       } catch (error) {
         console.error(`Failed to resume download ${download.filename}:`, error);
         results.push({ id: download.id, error: error.message });
@@ -354,19 +387,21 @@ class DownloadManager {
    * @returns {Promise<Array>} Array of cancelled downloads
    */
   async cancelAllDownloads() {
-    const allDownloads = this.getAllDownloads().filter(
+    // Get raw downloads to access status
+    const allDownloads = Array.from(this.downloads.values());
+    const downloadsToCancel = allDownloads.filter(
       d => d.status === DOWNLOAD_STATUS.DOWNLOADING ||
            d.status === DOWNLOAD_STATUS.PAUSED ||
            d.status === DOWNLOAD_STATUS.QUEUED
     );
 
-    console.log(`Cancelling ${allDownloads.length} downloads`);
+    console.log(`Cancelling ${downloadsToCancel.length} downloads`);
 
     const results = [];
-    for (const download of allDownloads) {
+    for (const download of downloadsToCancel) {
       try {
         const result = await this.cancelDownload(download.id);
-        results.push(result);
+        results.push(this.serializeDownload(result));
       } catch (error) {
         console.error(`Failed to cancel download ${download.filename}:`, error);
         results.push({ id: download.id, error: error.message });
