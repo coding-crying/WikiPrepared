@@ -1,6 +1,15 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 
+// Check if electronAPI is available
+const checkElectronAPI = () => {
+  if (typeof window === 'undefined' || !window.electronAPI) {
+    console.error('electronAPI is not available. Make sure preload script is loaded.');
+    return false;
+  }
+  return true;
+};
+
 export const useZimsStore = create(
   devtools(
     (set, get) => ({
@@ -13,6 +22,12 @@ export const useZimsStore = create(
 
       // Actions
       fetchCatalog: async (forceRefresh = false) => {
+        if (!checkElectronAPI()) {
+          console.warn('Skipping catalog fetch - electronAPI not available');
+          set({ isLoading: false, error: 'electronAPI not available' });
+          return [];
+        }
+
         set({ isLoading: true, error: null });
         try {
           const catalog = await window.electronAPI.invoke('zim:fetch-catalog', forceRefresh);
@@ -41,6 +56,11 @@ export const useZimsStore = create(
       },
 
       scanInstalledZims: async (drivePath) => {
+        if (!checkElectronAPI()) {
+          console.warn('Skipping ZIM scan - electronAPI not available');
+          return [];
+        }
+
         try {
           const installed = await window.electronAPI.invoke('drives:scan', drivePath);
           set({ installedZims: installed });

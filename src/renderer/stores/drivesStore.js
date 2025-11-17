@@ -1,6 +1,15 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 
+// Check if electronAPI is available
+const checkElectronAPI = () => {
+  if (typeof window === 'undefined' || !window.electronAPI) {
+    console.error('electronAPI is not available. Make sure preload script is loaded.');
+    return false;
+  }
+  return true;
+};
+
 export const useDrivesStore = create(
   devtools(
     (set, get) => ({
@@ -11,6 +20,12 @@ export const useDrivesStore = create(
 
       // Actions
       scanDrives: async () => {
+        if (!checkElectronAPI()) {
+          console.warn('Skipping drive scan - electronAPI not available');
+          set({ isScanning: false });
+          return [];
+        }
+
         set({ isScanning: true });
         try {
           const drives = await window.electronAPI.invoke('drives:list');
@@ -28,6 +43,11 @@ export const useDrivesStore = create(
       },
 
       startWatching: () => {
+        if (!checkElectronAPI()) {
+          console.warn('Skipping drive watching - electronAPI not available');
+          return;
+        }
+
         if (get().isWatching) return;
 
         window.electronAPI.invoke('drives:watch-start');
@@ -42,6 +62,8 @@ export const useDrivesStore = create(
       },
 
       stopWatching: () => {
+        if (!checkElectronAPI()) return;
+
         window.electronAPI.invoke('drives:watch-stop');
         window.electronAPI.off('drives:changed');
         set({ isWatching: false });
