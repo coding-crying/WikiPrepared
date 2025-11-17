@@ -126,8 +126,8 @@ export default function MainConfigScreen() {
       subtitle="Select content and reader apps to include"
       maxWidth="xl"
     >
-      <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-        <Grid container spacing={3} sx={{ flex: 1 }}>
+      <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+        <Grid container spacing={3} sx={{ flex: 1, overflow: 'auto', mb: 2 }}>
           {/* Left: ZIM Selection */}
           <Grid item xs={12} md={7}>
             <Paper variant="outlined" sx={{ p: 3, height: '100%' }}>
@@ -259,8 +259,8 @@ export default function MainConfigScreen() {
           </Grid>
         </Grid>
 
-        {/* Storage Bar */}
-        <Box sx={{ mt: 3 }}>
+        {/* Storage Bar - stays at bottom */}
+        <Box sx={{ flexShrink: 0, mt: 2 }}>
           {selectedDrive ? (
             <StorageBar
               used={usedSpace}
@@ -270,17 +270,20 @@ export default function MainConfigScreen() {
             />
           ) : (
             <Alert severity="info">
-              Downloading to local computer - no storage limit
+              Downloading to local computer
             </Alert>
           )}
         </Box>
-      </Box>
 
-      <NavigationButtons
-        onBack={handleBack}
-        onNext={handleContinue}
-        nextDisabled={selectedZims.length === 0 || !hasSpace}
-      />
+        {/* Navigation Buttons - always visible at bottom */}
+        <Box sx={{ flexShrink: 0 }}>
+          <NavigationButtons
+            onBack={handleBack}
+            onNext={handleContinue}
+            nextDisabled={selectedZims.length === 0 || !hasSpace}
+          />
+        </Box>
+      </Box>
     </AppLayout>
   );
 }

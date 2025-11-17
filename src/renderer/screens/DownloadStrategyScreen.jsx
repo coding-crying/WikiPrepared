@@ -73,17 +73,20 @@ export default function DownloadStrategyScreen() {
       title="Choose Download Method"
       subtitle={`Total download size: ${formatBytes(totalSize)}`}
     >
-      <Box
-        sx={{
-          flex: 1,
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 3,
-          maxWidth: 700,
-          mx: 'auto'
-        }}
-      >
-        {strategies.map((strategy) => (
+      <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+        <Box
+          sx={{
+            flex: 1,
+            overflow: 'auto',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 3,
+            maxWidth: 700,
+            mx: 'auto',
+            mb: 2
+          }}
+        >
+          {strategies.map((strategy) => (
           <Card
             key={strategy.id}
             sx={{
@@ -160,10 +163,13 @@ export default function DownloadStrategyScreen() {
               )}
             </CardContent>
           </Card>
-        ))}
-      </Box>
+          ))}
+        </Box>
 
-      <NavigationButtons onBack={handleBack} showNext={false} />
+        <Box sx={{ flexShrink: 0 }}>
+          <NavigationButtons onBack={handleBack} showNext={false} />
+        </Box>
+      </Box>
     </AppLayout>
   );
 }

@@ -10,15 +10,26 @@ export default function AppLayout({ title, subtitle, children, maxWidth = 'lg' }
     <Box
       sx={{
         minHeight: '100vh',
+        maxHeight: '100vh',
+        display: 'flex',
+        flexDirection: 'column',
         bgcolor: 'background.default',
-        py: { xs: 2, md: 4 },
-        overflow: 'auto'
+        overflow: 'hidden'
       }}
     >
-      <Container maxWidth={maxWidth}>
+      <Container
+        maxWidth={maxWidth}
+        sx={{
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          py: { xs: 2, md: 4 },
+          overflow: 'hidden'
+        }}
+      >
         {/* Header */}
         {title && (
-          <Box sx={{ mb: { xs: 2, md: 4 }, textAlign: 'center' }}>
+          <Box sx={{ mb: { xs: 2, md: 3 }, textAlign: 'center', flexShrink: 0 }}>
             <Typography
               variant="h4"
               component="h1"
@@ -40,10 +51,11 @@ export default function AppLayout({ title, subtitle, children, maxWidth = 'lg' }
           elevation={2}
           sx={{
             p: { xs: 2, md: 4 },
-            minHeight: '400px',
+            flex: 1,
             display: 'flex',
             flexDirection: 'column',
-            overflow: 'auto'
+            overflow: 'hidden',
+            minHeight: 0
           }}
           className="fade-in"
         >

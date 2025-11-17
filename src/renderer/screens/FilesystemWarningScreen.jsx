@@ -65,8 +65,9 @@ export default function FilesystemWarningScreen() {
 
   return (
     <AppLayout title="Filesystem Compatibility Warning">
-      <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-        <Alert severity="warning" sx={{ mb: 3 }}>
+      <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+        <Box sx={{ flex: 1, overflow: 'auto', mb: 2 }}>
+          <Alert severity="warning" sx={{ mb: 3 }}>
           <Typography variant="body1" gutterBottom>
             The selected drive uses <strong>{selectedDrive.filesystem}</strong>,
             which {isFAT32 ? 'cannot store files larger than 4GB' : 'may not support large files'}.
@@ -141,29 +142,32 @@ export default function FilesystemWarningScreen() {
           </Box>
         </Paper>
 
-        {/* Alternative options */}
-        <Box sx={{ mt: 'auto', pt: 3 }}>
-          <Typography variant="body2" color="text.secondary" gutterBottom>
-            Or:
-          </Typography>
-          <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-            <Button
-              variant="outlined"
-              onClick={handleContinueAnyway}
-            >
-              Continue with {selectedDrive.filesystem} anyway
-            </Button>
-            <Button
-              variant="outlined"
-              onClick={handleBack}
-            >
-              Choose a different drive
-            </Button>
+          {/* Alternative options */}
+          <Box sx={{ pt: 3 }}>
+            <Typography variant="body2" color="text.secondary" gutterBottom>
+              Or:
+            </Typography>
+            <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+              <Button
+                variant="outlined"
+                onClick={handleContinueAnyway}
+              >
+                Continue with {selectedDrive.filesystem} anyway
+              </Button>
+              <Button
+                variant="outlined"
+                onClick={handleBack}
+              >
+                Choose a different drive
+              </Button>
+            </Box>
           </Box>
         </Box>
-      </Box>
 
-      <NavigationButtons onBack={handleBack} showNext={false} />
+        <Box sx={{ flexShrink: 0 }}>
+          <NavigationButtons onBack={handleBack} showNext={false} />
+        </Box>
+      </Box>
     </AppLayout>
   );
 }

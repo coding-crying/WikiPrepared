@@ -184,6 +184,42 @@ function setupIpcHandlers() {
     }
   });
 
+  ipcMain.handle(IPC_CHANNELS.DOWNLOAD_START_ALL, async () => {
+    try {
+      return await downloadManager.startAllDownloads();
+    } catch (error) {
+      console.error('Error starting all downloads:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.DOWNLOAD_PAUSE_ALL, async () => {
+    try {
+      return await downloadManager.pauseAllDownloads();
+    } catch (error) {
+      console.error('Error pausing all downloads:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.DOWNLOAD_RESUME_ALL, async () => {
+    try {
+      return await downloadManager.resumeAllDownloads();
+    } catch (error) {
+      console.error('Error resuming all downloads:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.DOWNLOAD_CANCEL_ALL, async () => {
+    try {
+      return await downloadManager.cancelAllDownloads();
+    } catch (error) {
+      console.error('Error cancelling all downloads:', error);
+      throw error;
+    }
+  });
+
   // ========================================
   // Update Service Handlers
   // ========================================

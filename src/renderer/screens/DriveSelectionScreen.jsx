@@ -137,35 +137,39 @@ export default function DriveSelectionScreen() {
       title="Select USB Drive"
       subtitle="Choose the USB drive where you want to install Wikipedia"
     >
-      <Box sx={{ flex: 1 }}>
-        <Grid container spacing={3}>
-          {usbDrives.map((drive) => (
-            <Grid item xs={12} sm={6} md={4} key={drive.device}>
-              <DriveCard
-                drive={drive}
-                isSelected={selectedDrive?.device === drive.device}
-                onSelect={() => selectDrive(drive)}
-              />
-            </Grid>
-          ))}
-        </Grid>
+      <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+        <Box sx={{ flex: 1, overflow: 'auto', mb: 2 }}>
+          <Grid container spacing={3}>
+            {usbDrives.map((drive) => (
+              <Grid item xs={12} sm={6} md={4} key={drive.device}>
+                <DriveCard
+                  drive={drive}
+                  isSelected={selectedDrive?.device === drive.device}
+                  onSelect={() => selectDrive(drive)}
+                />
+              </Grid>
+            ))}
+          </Grid>
 
-        <Box sx={{ mt: 3, textAlign: 'center' }}>
-          <Button
-            variant="text"
-            size="small"
-            onClick={handleLocalDownload}
-          >
-            Download to computer instead (not to USB)
-          </Button>
+          <Box sx={{ mt: 3, textAlign: 'center' }}>
+            <Button
+              variant="text"
+              size="small"
+              onClick={handleLocalDownload}
+            >
+              Download to computer instead (not to USB)
+            </Button>
+          </Box>
+        </Box>
+
+        <Box sx={{ flexShrink: 0 }}>
+          <NavigationButtons
+            onBack={handleBack}
+            onNext={handleContinue}
+            nextDisabled={!selectedDrive}
+          />
         </Box>
       </Box>
-
-      <NavigationButtons
-        onBack={handleBack}
-        onNext={handleContinue}
-        nextDisabled={!selectedDrive}
-      />
     </AppLayout>
   );
 }

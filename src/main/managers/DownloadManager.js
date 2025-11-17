@@ -275,6 +275,108 @@ class DownloadManager {
   }
 
   /**
+   * Start all queued downloads
+   * @returns {Promise<Array>} Array of started downloads
+   */
+  async startAllDownloads() {
+    const queuedDownloads = this.getAllDownloads().filter(
+      d => d.status === DOWNLOAD_STATUS.QUEUED
+    );
+
+    console.log(`Starting ${queuedDownloads.length} queued downloads`);
+
+    const results = [];
+    for (const download of queuedDownloads) {
+      try {
+        const result = await this.startDownload(download.id);
+        results.push(result);
+      } catch (error) {
+        console.error(`Failed to start download ${download.filename}:`, error);
+        results.push({ id: download.id, error: error.message });
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * Pause all active downloads
+   * @returns {Promise<Array>} Array of paused downloads
+   */
+  async pauseAllDownloads() {
+    const activeDownloads = this.getAllDownloads().filter(
+      d => d.status === DOWNLOAD_STATUS.DOWNLOADING
+    );
+
+    console.log(`Pausing ${activeDownloads.length} active downloads`);
+
+    const results = [];
+    for (const download of activeDownloads) {
+      try {
+        const result = await this.pauseDownload(download.id);
+        results.push(result);
+      } catch (error) {
+        console.error(`Failed to pause download ${download.filename}:`, error);
+        results.push({ id: download.id, error: error.message });
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * Resume all paused downloads
+   * @returns {Promise<Array>} Array of resumed downloads
+   */
+  async resumeAllDownloads() {
+    const pausedDownloads = this.getAllDownloads().filter(
+      d => d.status === DOWNLOAD_STATUS.PAUSED
+    );
+
+    console.log(`Resuming ${pausedDownloads.length} paused downloads`);
+
+    const results = [];
+    for (const download of pausedDownloads) {
+      try {
+        const result = await this.resumeDownload(download.id);
+        results.push(result);
+      } catch (error) {
+        console.error(`Failed to resume download ${download.filename}:`, error);
+        results.push({ id: download.id, error: error.message });
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * Cancel all downloads (active, paused, or queued)
+   * @returns {Promise<Array>} Array of cancelled downloads
+   */
+  async cancelAllDownloads() {
+    const allDownloads = this.getAllDownloads().filter(
+      d => d.status === DOWNLOAD_STATUS.DOWNLOADING ||
+           d.status === DOWNLOAD_STATUS.PAUSED ||
+           d.status === DOWNLOAD_STATUS.QUEUED
+    );
+
+    console.log(`Cancelling ${allDownloads.length} downloads`);
+
+    const results = [];
+    for (const download of allDownloads) {
+      try {
+        const result = await this.cancelDownload(download.id);
+        results.push(result);
+      } catch (error) {
+        console.error(`Failed to cancel download ${download.filename}:`, error);
+        results.push({ id: download.id, error: error.message });
+      }
+    }
+
+    return results;
+  }
+
+  /**
    * Register a progress callback for a download
    * @param {string} downloadId - Download ID
    * @param {Function} callback - Callback function
