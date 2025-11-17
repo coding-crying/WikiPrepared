@@ -1,6 +1,4 @@
 console.log('=== PRELOAD SCRIPT STARTING ===');
-console.log('Preload: __dirname =', __dirname);
-console.log('Preload: process.cwd() =', process.cwd());
 
 let contextBridge, ipcRenderer, IPC_CHANNELS, MAIN_TO_RENDERER_CHANNELS;
 
