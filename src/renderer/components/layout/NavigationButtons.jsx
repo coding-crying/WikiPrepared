@@ -4,6 +4,7 @@ import { ArrowBack, ArrowForward } from '@mui/icons-material';
 
 /**
  * Reusable navigation buttons for bottom of screens
+ * Supports optional center content (like a storage bar)
  */
 export default function NavigationButtons({
   onBack,
@@ -15,7 +16,8 @@ export default function NavigationButtons({
   showBack = true,
   showNext = true,
   nextVariant = 'contained',
-  nextColor = 'primary'
+  nextColor = 'primary',
+  centerContent = null
 }) {
   return (
     <Box
@@ -24,7 +26,7 @@ export default function NavigationButtons({
         justifyContent: 'space-between',
         alignItems: 'center',
         mt: 'auto',
-        pt: 4,
+        pt: 3,
         borderTop: '1px solid',
         borderColor: 'divider'
       }}
@@ -35,23 +37,30 @@ export default function NavigationButtons({
           startIcon={<ArrowBack />}
           onClick={onBack}
           disabled={backDisabled}
+          sx={{ flexShrink: 0 }}
         >
           {backLabel}
         </Button>
       ) : (
-        <div /> /* Spacer */
+        <Box sx={{ width: 100 }} /> /* Spacer */
       )}
 
-      {showNext && (
+      {/* Center content slot */}
+      {centerContent}
+
+      {showNext ? (
         <Button
           variant={nextVariant}
           color={nextColor}
           endIcon={<ArrowForward />}
           onClick={onNext}
           disabled={nextDisabled}
+          sx={{ flexShrink: 0 }}
         >
           {nextLabel}
         </Button>
+      ) : (
+        <Box sx={{ width: 100 }} /> /* Spacer */
       )}
     </Box>
   );

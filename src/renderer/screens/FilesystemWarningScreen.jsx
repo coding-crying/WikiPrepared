@@ -64,7 +64,7 @@ export default function FilesystemWarningScreen() {
   const isFAT32 = selectedDrive.filesystem === FILESYSTEMS.FAT32;
 
   return (
-    <AppLayout title="Filesystem Compatibility Warning">
+    <AppLayout title="Filesystem Compatibility Warning" currentStep={1}>
       <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
         <Box sx={{ flex: 1, overflow: 'auto', mb: 2 }}>
           <Alert severity="warning" sx={{ mb: 3 }}>
@@ -90,22 +90,22 @@ export default function FilesystemWarningScreen() {
           sx={{
             p: 3,
             mb: 3,
-            borderColor: 'error.main',
-            bgcolor: 'error.light',
+            borderColor: 'rgba(239, 68, 68, 0.5)',
+            bgcolor: 'rgba(239, 68, 68, 0.1)',
             borderWidth: 2
           }}
         >
           <Box sx={{ display: 'flex', alignItems: 'flex-start', mb: 2 }}>
-            <WarningIcon sx={{ color: 'error.dark', mr: 1, mt: 0.5 }} />
+            <WarningIcon sx={{ color: '#ef4444', mr: 1, mt: 0.5 }} />
             <Box>
-              <Typography variant="subtitle1" fontWeight={700} color="error.dark">
+              <Typography variant="subtitle1" fontWeight={700} sx={{ color: '#fca5a5' }}>
                 WARNING: Formatting will erase ALL data on this drive!
               </Typography>
-              <Typography variant="body2" color="error.dark" sx={{ mt: 1 }}>
+              <Typography variant="body2" sx={{ color: '#fca5a5', mt: 1 }}>
                 Drive: {selectedDrive.label || selectedDrive.device} - {formatGB(selectedDrive.size)}
               </Typography>
               {selectedDrive.mountpoints && selectedDrive.mountpoints.length > 0 && (
-                <Typography variant="body2" color="error.dark">
+                <Typography variant="body2" sx={{ color: '#fca5a5' }}>
                   Location: {selectedDrive.mountpoints[0].path}
                 </Typography>
               )}

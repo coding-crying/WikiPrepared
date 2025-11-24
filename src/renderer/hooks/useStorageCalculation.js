@@ -25,14 +25,16 @@ export function useStorageCalculation() {
     // Total size needed
     const totalSize = zimSize + readerSize;
 
-    // Available space
-    let availableSpace;
+    // Available space - use freeSpace if available (accounts for existing content)
+    let totalCapacity;
     let usedSpace = 0;
+    let freeSpace = 0;
 
     if (selectedDrive) {
-      // USB drive selected - use its capacity
-      availableSpace = selectedDrive.size;
-      usedSpace = selectedDrive.used || 0;
+      // USB drive selected - use actual free space if available
+      totalCapacity = selectedDrive.size || 0;
+      usedSpace = selectedDrive.usedSpace || 0;
+      freeSpace = selectedDrive.freeSpace || (totalCapacity - usedSpace);
     } else {
       // Local download - find system drive (mounted at / or C:\)
       const systemDrive = allDrives.find(d => {
@@ -41,33 +43,37 @@ export function useStorageCalculation() {
       });
 
       if (systemDrive) {
-        availableSpace = systemDrive.size;
-        usedSpace = systemDrive.used || 0;
+        totalCapacity = systemDrive.size || 0;
+        usedSpace = systemDrive.usedSpace || 0;
+        freeSpace = systemDrive.freeSpace || (totalCapacity - usedSpace);
       } else {
         // Fallback: estimate 500GB for system drive
-        availableSpace = 500 * 1024 * 1024 * 1024; // 500 GB in bytes
+        totalCapacity = 500 * 1024 * 1024 * 1024; // 500 GB in bytes
         usedSpace = 0;
+        freeSpace = totalCapacity;
       }
     }
 
-    // Free space after selection
-    const freeSpace = availableSpace - usedSpace - totalSize;
+    // Remaining free space after selection
+    const remainingSpace = freeSpace - totalSize;
 
-    // Check if there's enough space
-    const hasSpace = totalSize <= (availableSpace - usedSpace);
+    // Check if there's enough space (compare against actual free space, not total capacity)
+    const hasSpace = totalSize <= freeSpace;
 
-    // Calculate percentage used
-    const percentUsed = availableSpace > 0
-      ? ((usedSpace + totalSize) / availableSpace) * 100
+    // Calculate percentage used (of total capacity)
+    const percentUsed = totalCapacity > 0
+      ? ((usedSpace + totalSize) / totalCapacity) * 100
       : 0;
 
     return {
       zimSize,
       readerSize,
       totalSize,
-      availableSpace,
+      availableSpace: freeSpace, // Available = free space (for backward compatibility)
+      totalCapacity,
       usedSpace,
       freeSpace,
+      remainingSpace,
       hasSpace,
       percentUsed,
       isLocalDownload: !selectedDrive

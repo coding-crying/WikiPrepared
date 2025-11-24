@@ -4,12 +4,7 @@ import {
   Box,
   Typography,
   Paper,
-  List,
-  ListItem,
-  ListItemIcon,
-  ListItemText,
   Button,
-  Alert,
   Divider
 } from '@mui/material';
 import {
@@ -58,115 +53,128 @@ export default function CompletionScreen() {
 
   return (
     <AppLayout
-      title="✅ Your Wikipedia Stick is Ready!"
+      title="Your Wikipedia Stick is Ready!"
       subtitle="Successfully created your offline Wikipedia USB stick"
       maxWidth="md"
+      currentStep={4}
     >
       <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-        {/* Success message */}
-        <Alert severity="success" sx={{ mb: 3 }}>
-          <Typography variant="body1" fontWeight={600}>
-            All content has been successfully installed!
+        {/* Success header with icon */}
+        <Box sx={{ textAlign: 'center', mb: 3 }}>
+          <CheckIcon sx={{ fontSize: 64, color: 'success.main', mb: 1 }} />
+          <Typography variant="h5" fontWeight={600} color="success.main">
+            Installation Complete!
           </Typography>
-        </Alert>
+        </Box>
 
-        {/* Summary */}
-        <Paper variant="outlined" sx={{ p: 3, mb: 3 }}>
-          <Typography variant="h6" gutterBottom>
-            Installation Summary
-          </Typography>
-          <Divider sx={{ mb: 2 }} />
+        {/* Two-column layout for landscape */}
+        <Box sx={{
+          display: 'grid',
+          gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' },
+          gap: 3,
+          flex: 1,
+          minHeight: 0
+        }}>
+          {/* Left column: Summary */}
+          <Paper variant="outlined" sx={{ p: 2.5, display: 'flex', flexDirection: 'column' }}>
+            <Typography variant="subtitle1" fontWeight={600} gutterBottom>
+              Installed Content
+            </Typography>
 
-          {/* Wikipedia Content */}
-          <Box sx={{ mb: 3 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-              <FileIcon sx={{ mr: 1, color: 'primary.main' }} />
-              <Typography variant="subtitle1" fontWeight={600}>
-                Wikipedia Content
+            {/* Wikipedia Content - compact list */}
+            <Box sx={{ flex: 1, overflow: 'auto' }}>
+              {selectedZims.map((zim) => (
+                <Box key={zim.filename} sx={{ display: 'flex', alignItems: 'center', py: 0.75, gap: 1 }}>
+                  <FileIcon sx={{ fontSize: 18, color: 'primary.main' }} />
+                  <Typography variant="body2" sx={{ flex: 1 }}>
+                    {getLanguageName(zim.language)} - {getScopeName(zim.scope)}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {formatBytes(zim.size)}
+                  </Typography>
+                </Box>
+              ))}
+
+              {/* Reader Apps */}
+              {selectedReaders.length > 0 && (
+                <>
+                  <Divider sx={{ my: 1.5 }} />
+                  {selectedReaders.map((platform) => (
+                    <Box key={platform} sx={{ display: 'flex', alignItems: 'center', py: 0.75, gap: 1 }}>
+                      <AppsIcon sx={{ fontSize: 18, color: 'primary.main' }} />
+                      <Typography variant="body2">
+                        Kiwix for {PLATFORM_NAMES[platform]}
+                      </Typography>
+                    </Box>
+                  ))}
+                </>
+              )}
+            </Box>
+
+            {/* Total Size */}
+            <Box sx={{
+              mt: 2,
+              pt: 1.5,
+              borderTop: '1px solid',
+              borderColor: 'divider',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center'
+            }}>
+              <Typography variant="body2" color="text.secondary">
+                Total installed
+              </Typography>
+              <Typography variant="body2" fontWeight={600}>
+                {formatBytes(totalSize)}
+                {selectedDrive && ` / ${formatBytes(selectedDrive.size)}`}
               </Typography>
             </Box>
-            <List dense>
-              {selectedZims.map((zim) => (
-                <ListItem key={zim.filename}>
-                  <ListItemIcon>
-                    <CheckIcon color="success" fontSize="small" />
-                  </ListItemIcon>
-                  <ListItemText
-                    primary={`${getLanguageName(zim.language)} - ${getScopeName(zim.scope)}`}
-                    secondary={formatBytes(zim.size)}
-                  />
-                </ListItem>
+          </Paper>
+
+          {/* Right column: Next Steps */}
+          <Paper variant="outlined" sx={{ p: 2.5, bgcolor: 'rgba(96, 165, 250, 0.08)', borderColor: 'rgba(96, 165, 250, 0.25)' }}>
+            <Typography variant="subtitle1" fontWeight={600} gutterBottom>
+              What's Next
+            </Typography>
+
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {[
+                { step: '1', title: 'Eject your USB drive', desc: selectedDrive ? 'Use the button below' : 'Files saved to your computer' },
+                { step: '2', title: 'Plug into any computer', desc: 'Works on Windows, Mac, Linux' },
+                { step: '3', title: 'Run Kiwix reader', desc: 'Open the app from the USB' },
+                { step: '4', title: 'Enjoy offline Wikipedia!', desc: 'No internet needed' }
+              ].map((item) => (
+                <Box key={item.step} sx={{ display: 'flex', gap: 2, alignItems: 'flex-start' }}>
+                  <Box sx={{
+                    width: 28,
+                    height: 28,
+                    borderRadius: '50%',
+                    bgcolor: 'rgba(96, 165, 250, 0.2)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0
+                  }}>
+                    <Typography variant="caption" fontWeight={700} color="primary.main">
+                      {item.step}
+                    </Typography>
+                  </Box>
+                  <Box>
+                    <Typography variant="body2" fontWeight={600}>
+                      {item.title}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {item.desc}
+                    </Typography>
+                  </Box>
+                </Box>
               ))}
-            </List>
-          </Box>
-
-          {/* Reader Apps */}
-          {selectedReaders.length > 0 && (
-            <Box sx={{ mb: 2 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                <AppsIcon sx={{ mr: 1, color: 'primary.main' }} />
-                <Typography variant="subtitle1" fontWeight={600}>
-                  Kiwix Reader Apps
-                </Typography>
-              </Box>
-              <List dense>
-                {selectedReaders.map((platform) => (
-                  <ListItem key={platform}>
-                    <ListItemIcon>
-                      <CheckIcon color="success" fontSize="small" />
-                    </ListItemIcon>
-                    <ListItemText
-                      primary={`Kiwix for ${PLATFORM_NAMES[platform]}`}
-                    />
-                  </ListItem>
-                ))}
-              </List>
             </Box>
-          )}
+          </Paper>
+        </Box>
 
-          {/* Total Size */}
-          <Divider sx={{ my: 2 }} />
-          <Typography variant="body2" color="text.secondary">
-            <strong>Total installed:</strong> {formatBytes(totalSize)}
-            {selectedDrive && ` / ${formatBytes(selectedDrive.size)}`}
-          </Typography>
-        </Paper>
-
-        {/* Next Steps */}
-        <Paper variant="outlined" sx={{ p: 3, mb: 3, bgcolor: 'info.light' }}>
-          <Typography variant="h6" gutterBottom>
-            Next Steps
-          </Typography>
-          <List dense>
-            <ListItem>
-              <ListItemText
-                primary="1. Safely eject your USB drive"
-                secondary={selectedDrive ? 'Use the button below' : 'Files saved to your computer'}
-              />
-            </ListItem>
-            <ListItem>
-              <ListItemText
-                primary="2. Plug the USB into any computer"
-                secondary="Works on Windows, Mac, and Linux"
-              />
-            </ListItem>
-            <ListItem>
-              <ListItemText
-                primary="3. Run the Kiwix reader application"
-                secondary="Open the Kiwix app from the USB drive"
-              />
-            </ListItem>
-            <ListItem>
-              <ListItemText
-                primary="4. Enjoy offline Wikipedia!"
-                secondary="No internet connection required"
-              />
-            </ListItem>
-          </List>
-        </Paper>
-
-        {/* Actions */}
-        <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center', mt: 'auto' }}>
+        {/* Actions - centered at bottom */}
+        <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center', mt: 3, pt: 2, borderTop: '1px solid', borderColor: 'divider' }}>
           {selectedDrive && (
             <Button
               variant="contained"

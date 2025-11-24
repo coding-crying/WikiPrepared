@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Box,
@@ -7,12 +7,13 @@ import {
   Button,
   CircularProgress
 } from '@mui/material';
+import { UsbOff as UsbOffIcon, Computer as ComputerIcon, CheckCircle as CheckIcon } from '@mui/icons-material';
 import { useDrivesStore } from '../stores/drivesStore';
 import { useAppFlowStore } from '../stores/appFlowStore';
 import DriveCard from '../components/common/DriveCard';
 import AppLayout from '../components/layout/AppLayout';
 import NavigationButtons from '../components/layout/NavigationButtons';
-import { ROUTES, FILESYSTEMS } from '../utils/constants';
+import { ROUTES, supportsLargeFiles } from '../utils/constants';
 
 /**
  * Step 2: Drive selection screen
@@ -22,34 +23,48 @@ export default function DriveSelectionScreen() {
   const navigate = useNavigate();
   const { drives, isScanning, scanDrives, startWatching, getUsbDrives } = useDrivesStore();
   const { selectedDrive, selectDrive } = useAppFlowStore();
+  const [localDownloadSelected, setLocalDownloadSelected] = useState(false);
 
   useEffect(() => {
     // Initial scan
     scanDrives();
     // Start watching for drive changes
     startWatching();
+    // Reset local download selection when entering this screen
+    setLocalDownloadSelected(false);
   }, []);
 
   const usbDrives = getUsbDrives();
 
+  // Something is selected if either a drive is selected OR local download is explicitly chosen
+  const hasSelection = selectedDrive !== null || localDownloadSelected;
+
   const handleContinue = () => {
-    if (!selectedDrive) return;
-
-    // Check if filesystem warning needed
-    const needsWarning = !FILESYSTEMS.LARGE_FILE_SUPPORT.includes(
-      selectedDrive.filesystem
-    );
-
-    if (needsWarning) {
-      navigate(ROUTES.FILESYSTEM_WARNING);
-    } else {
+    // If local download selected (no drive)
+    if (localDownloadSelected && !selectedDrive) {
       navigate(ROUTES.CONFIGURE);
+      return;
+    }
+
+    // If drive selected, check filesystem warning
+    if (selectedDrive) {
+      const needsWarning = !supportsLargeFiles(selectedDrive.filesystem);
+      if (needsWarning) {
+        navigate(ROUTES.FILESYSTEM_WARNING);
+      } else {
+        navigate(ROUTES.CONFIGURE);
+      }
     }
   };
 
-  const handleLocalDownload = () => {
-    selectDrive(null); // No drive selected means local download
-    navigate(ROUTES.CONFIGURE);
+  const handleSelectLocalDownload = () => {
+    selectDrive(null); // Clear any drive selection
+    setLocalDownloadSelected(true);
+  };
+
+  const handleSelectDrive = (drive) => {
+    selectDrive(drive);
+    setLocalDownloadSelected(false); // Clear local download selection
   };
 
   const handleBack = () => {
@@ -60,7 +75,7 @@ export default function DriveSelectionScreen() {
   // Loading state
   if (isScanning && usbDrives.length === 0) {
     return (
-      <AppLayout title="Scanning for Drives">
+      <AppLayout title="Scanning for Drives" currentStep={1}>
         <Box
           sx={{
             textAlign: 'center',
@@ -87,7 +102,7 @@ export default function DriveSelectionScreen() {
   // No drives detected
   if (usbDrives.length === 0) {
     return (
-      <AppLayout title="Please Insert USB Drive">
+      <AppLayout title="Please Insert USB Drive" currentStep={1}>
         <Box
           sx={{
             textAlign: 'center',
@@ -99,9 +114,7 @@ export default function DriveSelectionScreen() {
             flex: 1
           }}
         >
-          <Typography variant="h1" sx={{ mb: 2, fontSize: '4rem' }}>
-            🔌
-          </Typography>
+          <UsbOffIcon sx={{ fontSize: '4rem', mb: 2, color: 'text.secondary' }} />
           <Typography variant="h6" gutterBottom>
             No USB drives detected
           </Typography>
@@ -116,14 +129,24 @@ export default function DriveSelectionScreen() {
             </Typography>
           </Box>
 
-          <Button
-            variant="text"
-            size="small"
-            onClick={handleLocalDownload}
-            sx={{ mt: 6 }}
-          >
-            I do not want to download to a USB
-          </Button>
+          {/* Download to Computer link */}
+          <Box sx={{ mt: 4, textAlign: 'center' }}>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+              Don't have a USB drive handy?
+            </Typography>
+            <Button
+              variant="text"
+              size="small"
+              startIcon={<ComputerIcon />}
+              onClick={() => {
+                handleSelectLocalDownload();
+                navigate(ROUTES.CONFIGURE);
+              }}
+              sx={{ color: 'text.secondary', textTransform: 'none' }}
+            >
+              Download to computer instead
+            </Button>
+          </Box>
         </Box>
 
         <NavigationButtons onBack={handleBack} showNext={false} />
@@ -136,6 +159,7 @@ export default function DriveSelectionScreen() {
     <AppLayout
       title="Select USB Drive"
       subtitle="Choose the USB drive where you want to install Wikipedia"
+      currentStep={1}
     >
       <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
         <Box sx={{ flex: 1, overflow: 'auto', mb: 2 }}>
@@ -145,19 +169,32 @@ export default function DriveSelectionScreen() {
                 <DriveCard
                   drive={drive}
                   isSelected={selectedDrive?.device === drive.device}
-                  onSelect={() => selectDrive(drive)}
+                  onSelect={() => handleSelectDrive(drive)}
                 />
               </Grid>
             ))}
           </Grid>
 
-          <Box sx={{ mt: 3, textAlign: 'center' }}>
+          {/* Download to Computer link - less prominent */}
+          <Box sx={{ mt: 3, pt: 2, borderTop: '1px solid', borderColor: 'divider', textAlign: 'center' }}>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+              Don't want to use a USB drive?
+            </Typography>
             <Button
               variant="text"
               size="small"
-              onClick={handleLocalDownload}
+              startIcon={<ComputerIcon sx={{ fontSize: 18 }} />}
+              onClick={handleSelectLocalDownload}
+              sx={{
+                color: localDownloadSelected ? 'primary.main' : 'text.secondary',
+                textTransform: 'none',
+                fontWeight: localDownloadSelected ? 600 : 400
+              }}
             >
-              Download to computer instead (not to USB)
+              Download to computer instead
+              {localDownloadSelected && (
+                <CheckIcon sx={{ ml: 1, fontSize: 16, color: 'primary.main' }} />
+              )}
             </Button>
           </Box>
         </Box>
@@ -166,7 +203,7 @@ export default function DriveSelectionScreen() {
           <NavigationButtons
             onBack={handleBack}
             onNext={handleContinue}
-            nextDisabled={!selectedDrive}
+            nextDisabled={!hasSelection}
           />
         </Box>
       </Box>

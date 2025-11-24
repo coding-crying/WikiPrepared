@@ -1,82 +1,132 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Box, Card, CardContent, Typography } from '@mui/material';
-import { Update as UpdateIcon, Add as AddIcon } from '@mui/icons-material';
-import { useAppFlowStore } from '../stores/appFlowStore';
+import { Box, Button, Typography, Link } from '@mui/material';
+import { ArrowForward as ArrowIcon, Usb as UsbIcon } from '@mui/icons-material';
 import AppLayout from '../components/layout/AppLayout';
-import { USER_INTENTS, ROUTES } from '../utils/constants';
+import { ROUTES } from '../utils/constants';
 
 /**
- * Step 1: Initial choice screen
- * User chooses between updating existing stick or creating new one
+ * Welcome/Start screen
+ * Simple entry point that directs to drive selection
  */
 export default function InitialChoiceScreen() {
   const navigate = useNavigate();
-  const setUserIntent = useAppFlowStore(state => state.setUserIntent);
 
-  const handleChoice = (intent) => {
-    setUserIntent(intent);
+  const handleGetStarted = () => {
     navigate(ROUTES.DRIVE_SELECTION);
   };
 
-  const choices = [
-    {
-      intent: USER_INTENTS.UPDATE,
-      icon: UpdateIcon,
-      title: 'Update Existing Stick',
-      description: 'Update ZIM files and readers on an existing Wikipedia USB stick',
-      color: 'primary.main'
-    },
-    {
-      intent: USER_INTENTS.CREATE_NEW,
-      icon: AddIcon,
-      title: 'Create New Stick',
-      description: 'Set up a fresh Wikipedia USB stick from scratch',
-      color: 'success.main'
-    }
-  ];
-
   return (
-    <AppLayout
-      title="WikiPrepared"
-      subtitle="Create Your Offline Wikipedia USB Stick"
-    >
+    <AppLayout hideSteps>
       <Box
         sx={{
-          display: 'flex',
-          flexDirection: { xs: 'column', md: 'row' },
-          gap: 3,
           flex: 1,
+          display: 'flex',
+          alignItems: 'center',
           justifyContent: 'center',
-          alignItems: 'center'
+          py: 3
         }}
       >
-        {choices.map(({ intent, icon: Icon, title, description, color }) => (
-          <Card
-            key={intent}
+        {/* Two-column layout for landscape */}
+        <Box
+          sx={{
+            display: 'flex',
+            flexDirection: { xs: 'column', md: 'row' },
+            alignItems: 'center',
+            gap: { xs: 4, md: 6 },
+            maxWidth: 800
+          }}
+        >
+          {/* Left: Icon */}
+          <Box
             sx={{
-              cursor: 'pointer',
-              transition: 'all 0.2s ease-in-out',
-              flex: 1,
-              maxWidth: { xs: '100%', md: 400 },
-              '&:hover': {
-                transform: 'translateY(-4px)',
-                boxShadow: 6
-              }
+              width: { xs: 100, md: 140 },
+              height: { xs: 100, md: 140 },
+              borderRadius: '50%',
+              bgcolor: 'rgba(255, 255, 255, 0.08)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0
             }}
-            onClick={() => handleChoice(intent)}
           >
-            <CardContent sx={{ p: 4, textAlign: 'center' }}>
-              <Icon sx={{ fontSize: 64, color, mb: 2 }} />
-              <Typography variant="h5" gutterBottom fontWeight={600}>
-                {title}
-              </Typography>
-              <Typography variant="body1" color="text.secondary">
-                {description}
-              </Typography>
-            </CardContent>
-          </Card>
-        ))}
+            <UsbIcon sx={{ fontSize: { xs: 48, md: 64 }, color: 'primary.main' }} />
+          </Box>
+
+          {/* Right: Content */}
+          <Box sx={{ textAlign: { xs: 'center', md: 'left' } }}>
+            <Typography variant="h4" fontWeight={600} gutterBottom>
+              Create an offline Wikipedia USB
+            </Typography>
+
+            <Typography
+              variant="body1"
+              color="text.secondary"
+              sx={{ mb: 3, maxWidth: 420 }}
+            >
+              Download Wikipedia content and Kiwix readers to a USB drive.
+              Access knowledge anywhere, no internet required.
+            </Typography>
+
+            {/* CTA Button */}
+            <Button
+              variant="contained"
+              size="large"
+              onClick={handleGetStarted}
+              endIcon={<ArrowIcon />}
+              sx={{
+                px: 4,
+                py: 1.25,
+                fontSize: '1rem'
+              }}
+            >
+              Get Started
+            </Button>
+
+            {/* Features - horizontal on landscape */}
+            <Box
+              sx={{
+                mt: 3,
+                display: 'flex',
+                gap: { xs: 3, md: 4 },
+                flexWrap: 'wrap',
+                justifyContent: { xs: 'center', md: 'flex-start' }
+              }}
+            >
+              {[
+                { label: 'Works Offline', desc: 'No internet needed' },
+                { label: 'Cross Platform', desc: 'Win, Mac, Linux' },
+                { label: 'Auto Updates', desc: 'Keep content fresh' }
+              ].map((feature) => (
+                <Box key={feature.label} sx={{ textAlign: { xs: 'center', md: 'left' } }}>
+                  <Typography variant="caption" fontWeight={600} display="block">
+                    {feature.label}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {feature.desc}
+                  </Typography>
+                </Box>
+              ))}
+            </Box>
+
+            {/* Website link */}
+            <Box sx={{ mt: 3 }}>
+              <Link
+                href="https://wikiprepared.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                sx={{
+                  color: 'text.secondary',
+                  fontSize: '0.75rem',
+                  textDecoration: 'none',
+                  '&:hover': { color: 'primary.main', textDecoration: 'underline' }
+                }}
+              >
+                wikiprepared.com
+              </Link>
+            </Box>
+          </Box>
+        </Box>
       </Box>
     </AppLayout>
   );

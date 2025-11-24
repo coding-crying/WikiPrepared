@@ -70,13 +70,75 @@ class DriveManager {
   formatDriveInfo(drive) {
     const mountpoint = drive.mountpoints[0] || {};
 
+    // Get filesystem type from mountpoint or detect it
+    let filesystem = null;
+    let usedSpace = 0;
+    let freeSpace = drive.size;
+
+    // Skip invalid mount paths like [SWAP]
+    const validMountPath = mountpoint.path &&
+      !mountpoint.path.includes('[') &&
+      !mountpoint.path.includes(']');
+
+    if (validMountPath) {
+      try {
+        const { execSync } = require('child_process');
+        const os = require('os');
+
+        if (os.platform() === 'win32') {
+          // Windows: use wmic
+          const driveLetter = mountpoint.path.charAt(0).toUpperCase();
+          try {
+            const result = execSync(`wmic logicaldisk where "DeviceID='${driveLetter}:'" get FileSystem,FreeSpace,Size /format:csv`, { encoding: 'utf8' });
+            const lines = result.trim().split('\n');
+            if (lines.length >= 2) {
+              const parts = lines[1].split(',');
+              if (parts.length >= 4) {
+                filesystem = parts[1] || null;
+                freeSpace = parseInt(parts[2]) || drive.size;
+                const totalSize = parseInt(parts[3]) || drive.size;
+                usedSpace = totalSize - freeSpace;
+              }
+            }
+          } catch (e) {
+            console.warn('Failed to get Windows disk info:', e.message);
+          }
+        } else {
+          // Unix: use df for space and filesystem
+          try {
+            const dfResult = execSync(`df -T "${mountpoint.path}" 2>/dev/null || df "${mountpoint.path}"`, { encoding: 'utf8' });
+            const lines = dfResult.trim().split('\n');
+            if (lines.length >= 2) {
+              const parts = lines[1].split(/\s+/);
+              // df -T output: Filesystem Type 1K-blocks Used Available Use% Mounted
+              if (parts.length >= 6) {
+                filesystem = parts[1]; // Filesystem type
+                const totalBlocks = parseInt(parts[2]) * 1024;
+                usedSpace = parseInt(parts[3]) * 1024;
+                freeSpace = parseInt(parts[4]) * 1024;
+              }
+            }
+          } catch (e) {
+            console.warn('Failed to get Unix disk info:', e.message);
+          }
+        }
+      } catch (e) {
+        console.warn('Error detecting filesystem:', e.message);
+      }
+    }
+
     return {
       device: drive.device,
       devicePath: drive.devicePath,
       displayName: drive.description || drive.device,
+      description: drive.description,
       label: mountpoint.label || 'Unnamed Drive',
       mountpoint: mountpoint.path,
+      mountpoints: drive.mountpoints,
       size: drive.size,
+      usedSpace,
+      freeSpace,
+      filesystem,
       isUSB: drive.isUSB,
       isRemovable: drive.isRemovable,
       isReadOnly: drive.isReadOnly,
@@ -108,17 +170,27 @@ class DriveManager {
       // Recursively search for .zim files
       await this.findZimFilesRecursive(drivePath, zimFiles);
 
-      // Extract metadata from filenames
+      // Extract metadata from filenames and flatten the structure
       const filesWithMetadata = zimFiles.map((filePath) => {
         const filename = path.basename(filePath);
         const stats = fs.statSync(filePath);
+        const metadata = this.parseZimFilename(filename);
 
+        // Return flattened structure matching catalog ZIM format
         return {
           path: filePath,
           filename: filename,
           size: stats.size,
           modified: stats.mtime,
-          metadata: this.parseZimFilename(filename),
+          date: metadata.date,
+          // Spread metadata for compatibility with ZimListItem component
+          source: metadata.source,
+          language: metadata.language,
+          topic: metadata.topic,
+          scope: metadata.scope,
+          valid: metadata.valid,
+          // Also keep nested metadata for backward compatibility
+          metadata: metadata,
         };
       });
 
@@ -343,22 +415,95 @@ class DriveManager {
 
   /**
    * Safely eject a drive
-   * @param {string} drivePath - Path to the drive
+   * @param {string} drivePath - Path to the drive (device path like /dev/sda or mount point)
    * @returns {Promise<Object>} Result
    */
   async ejectDrive(drivePath) {
-    // Note: Actual ejection is platform-specific and may require elevated privileges
-    // This is a placeholder implementation
+    const os = require('os');
+    const { exec } = require('child_process');
+    const util = require('util');
+    const execAsync = util.promisify(exec);
+
     console.log('Ejecting drive:', drivePath);
 
-    // On Windows: use "eject" or "removable drive ejector"
-    // On Linux: use "umount"
-    // On Mac: use "diskutil eject"
+    const platform = os.platform();
 
-    return {
-      success: true,
-      message: 'Please safely remove the drive manually',
-    };
+    try {
+      if (platform === 'linux') {
+        // First sync to flush buffers
+        await execAsync('sync');
+
+        // Get block device name (e.g., sda from /dev/sda or /dev/sda1)
+        let blockDevice = drivePath;
+        if (drivePath.startsWith('/dev/')) {
+          blockDevice = drivePath.replace('/dev/', '').replace(/[0-9]+$/, '');
+        }
+
+        // Try udisksctl first (works without root on most modern Linux)
+        let unmountedAny = false;
+
+        // First unmount all partitions on the device
+        try {
+          const { stdout } = await execAsync(`lsblk -ln -o NAME /dev/${blockDevice} 2>/dev/null || echo "${blockDevice}"`);
+          const partitions = stdout.trim().split('\n').filter(p => p.trim());
+          console.log('Found partitions to unmount:', partitions);
+
+          for (const partition of partitions) {
+            const partPath = `/dev/${partition.trim()}`;
+            try {
+              console.log(`Unmounting ${partPath}...`);
+              await execAsync(`udisksctl unmount -b ${partPath}`);
+              console.log(`Successfully unmounted ${partPath}`);
+              unmountedAny = true;
+            } catch (e) {
+              // Partition might not be mounted, that's ok
+              console.log(`Unmount ${partPath} result:`, e.message);
+            }
+          }
+        } catch (lsblkError) {
+          console.log('Failed to list partitions:', lsblkError.message);
+        }
+
+        // Try to power off the drive (optional, unmount is the key part)
+        try {
+          await execAsync(`udisksctl power-off -b /dev/${blockDevice}`);
+          console.log('Drive powered off successfully');
+          return { success: true, message: 'Drive ejected safely. You can now remove it.' };
+        } catch (powerOffError) {
+          console.log('Power-off failed (may need elevated permissions):', powerOffError.message);
+          // Power-off failed, but if we unmounted, that's good enough
+          if (unmountedAny) {
+            return { success: true, message: 'Drive unmounted. You can safely remove it now.' };
+          }
+          // Nothing worked, throw an error
+          throw new Error('Could not unmount drive. Please unmount manually before removing.');
+        }
+      } else if (platform === 'darwin') {
+        // macOS
+        if (drivePath.startsWith('/dev/')) {
+          await execAsync(`diskutil eject ${drivePath}`);
+        } else {
+          await execAsync(`diskutil unmount "${drivePath}"`);
+        }
+        return { success: true, message: 'Drive ejected safely. You can now remove it.' };
+      } else if (platform === 'win32') {
+        // Windows - use PowerShell to eject
+        // Extract drive letter from path (e.g., "E:" from "E:\")
+        const driveLetter = drivePath.match(/^([A-Za-z]:)/)?.[1];
+        if (driveLetter) {
+          // Use PowerShell to eject the drive
+          await execAsync(`powershell -Command "(New-Object -comObject Shell.Application).NameSpace(17).ParseName('${driveLetter}').InvokeVerb('Eject')"`);
+          return { success: true, message: 'Drive ejected safely. You can now remove it.' };
+        } else {
+          throw new Error('Could not determine drive letter');
+        }
+      } else {
+        throw new Error(`Unsupported platform: ${platform}`);
+      }
+    } catch (error) {
+      console.error('Eject error:', error);
+      throw new Error(`Failed to eject drive: ${error.message}`);
+    }
   }
 }
 

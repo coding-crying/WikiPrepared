@@ -75,40 +75,57 @@ class ZimManager {
     const $ = cheerio.load(html);
     const zims = [];
 
-    // Find all links to .zim files
-    $('a[href$=".zim"]').each((i, element) => {
-      const href = $(element).attr('href');
-      const filename = href;
+    // The Wikimedia directory listing is in a <pre> tag with format:
+    // <a href="filename.zim">filename.zim</a>                 DD-Mon-YYYY HH:MM        FILESIZE
+    const preContent = $('pre').text();
+    const lines = preContent.split('\n');
 
-      // Skip if it's a torrent or metadata file
-      if (filename.includes('.torrent') || filename.includes('.meta4')) {
-        return;
+    for (const line of lines) {
+      // Match lines with .zim files
+      // Format: filename.zim                 15-Jul-2024 21:35             2064507
+      const match = line.match(/^([^\s]+\.zim)\s+(\d{2}-\w{3}-\d{4}\s+\d{2}:\d{2})\s+(\d+)\s*$/);
+
+      if (match) {
+        const filename = match[1];
+        const dateModified = match[2];
+        const size = parseInt(match[3], 10);
+
+        // Skip if it's a torrent or metadata file
+        if (filename.includes('.torrent') || filename.includes('.meta4')) {
+          continue;
+        }
+
+        // Parse filename for metadata
+        const metadata = this.parseZimFilename(filename);
+
+        if (metadata.valid) {
+          zims.push({
+            filename,
+            url: URLS.WIKIMEDIA_DUMPS + filename,
+            ...metadata,
+            size,
+            sizeText: this.formatSize(size),
+            dateModified,
+            description: this.generateDescription(metadata),
+          });
+        }
       }
-
-      // Parse filename for metadata
-      const metadata = this.parseZimFilename(filename);
-
-      if (metadata.valid) {
-        // Get file size from adjacent table cell (if available)
-        const sizeText = $(element).parent().next().text().trim();
-        const size = this.parseSize(sizeText);
-
-        // Get date from filename or parent row
-        const dateText = $(element).parent().next().next().text().trim();
-
-        zims.push({
-          filename,
-          url: URLS.WIKIMEDIA_DUMPS + filename,
-          ...metadata,
-          size,
-          sizeText,
-          dateModified: dateText,
-          description: this.generateDescription(metadata),
-        });
-      }
-    });
+    }
 
     return zims;
+  }
+
+  /**
+   * Format size in bytes to human-readable string
+   * @param {number} bytes - Size in bytes
+   * @returns {string} Formatted size
+   */
+  formatSize(bytes) {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   }
 
   /**
@@ -198,13 +215,22 @@ class ZimManager {
 
   /**
    * Parse file size string to bytes
-   * @param {string} sizeText - Size text (e.g., "1.5G", "500M")
+   * @param {string} sizeText - Size text (e.g., "1.5G", "500M", or raw bytes "119265903349")
    * @returns {number} Size in bytes
    */
   parseSize(sizeText) {
     if (!sizeText) return 0;
 
-    const match = sizeText.match(/^([\d.]+)([KMGT]?)$/i);
+    // Clean up the text
+    const cleaned = sizeText.trim();
+
+    // First, try parsing as raw bytes (plain number)
+    if (/^\d+$/.test(cleaned)) {
+      return parseInt(cleaned, 10);
+    }
+
+    // Try parsing with unit suffix (e.g., "1.5G", "500M")
+    const match = cleaned.match(/^([\d.]+)\s*([KMGT]?)B?$/i);
     if (!match) return 0;
 
     const value = parseFloat(match[1]);

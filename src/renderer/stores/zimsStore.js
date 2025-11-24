@@ -77,24 +77,41 @@ export const useZimsStore = create(
         if (installedZims.length === 0) return [];
 
         const updates = [];
-        for (const installed of installedZims) {
+        const updatedInstalledZims = installedZims.map(installed => {
+          // For ZIMs without valid metadata (renamed files), we can't check for updates
+          if (!installed.valid || !installed.language || !installed.topic) {
+            return { ...installed, hasUpdate: false, isUpToDate: null }; // null = unknown
+          }
+
           const latest = catalog.find(zim =>
             zim.language === installed.language &&
             zim.topic === installed.topic &&
-            zim.scope === installed.scope &&
-            zim.date > installed.date
+            zim.scope === installed.scope
           );
 
           if (latest) {
-            updates.push({
-              installed,
-              latest,
-              sizeDiff: latest.size - installed.size
-            });
+            const hasUpdate = latest.date > installed.date;
+            if (hasUpdate) {
+              updates.push({
+                installed,
+                latest,
+                sizeDiff: latest.size - installed.size
+              });
+            }
+            return {
+              ...installed,
+              hasUpdate,
+              isUpToDate: !hasUpdate,
+              latestDate: latest.date,
+              latestFilename: latest.filename
+            };
           }
-        }
 
-        set({ updates });
+          // No matching ZIM in catalog (maybe deprecated or custom)
+          return { ...installed, hasUpdate: false, isUpToDate: null };
+        });
+
+        set({ installedZims: updatedInstalledZims, updates });
         return updates;
       },
 

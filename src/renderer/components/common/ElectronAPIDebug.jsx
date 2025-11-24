@@ -98,7 +98,8 @@ export default function ElectronAPIDebug() {
 
         <Button
           variant="contained"
-          sx={{ mt: 2, bgcolor: 'white', color: 'error.main' }}
+          color="error"
+          sx={{ mt: 2 }}
           onClick={() => window.location.reload()}
         >
           Reload Window

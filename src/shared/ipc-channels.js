@@ -22,6 +22,9 @@ const IPC_CHANNELS = {
   ZIM_GET_METADATA: 'zim:get-metadata',
 
   // Download Management
+  DOWNLOAD_GET_LOCAL_DISK_INFO: 'download:get-local-disk-info',
+  DOWNLOAD_SET_LOCATION: 'download:set-location',
+  DOWNLOAD_GET_LOCATION: 'download:get-location',
   DOWNLOAD_ADD: 'download:add',
   DOWNLOAD_START: 'download:start',
   DOWNLOAD_START_ALL: 'download:start-all',
@@ -48,6 +51,9 @@ const IPC_CHANNELS = {
   KIWIX_DOWNLOAD: 'kiwix:download',
   KIWIX_INSTALL: 'kiwix:install',
   KIWIX_DETECT_INSTALLED: 'kiwix:detect-installed',
+  KIWIX_GET_CACHE_INFO: 'kiwix:get-cache-info',
+  KIWIX_GET_CACHE_SIZE: 'kiwix:get-cache-size',
+  KIWIX_CLEAR_CACHE: 'kiwix:clear-cache',
 
   // File Operations
   FILE_COPY: 'file:copy',

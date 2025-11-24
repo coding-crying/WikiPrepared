@@ -14,6 +14,7 @@ export const useDrivesStore = create(
   devtools(
     (set, get) => ({
       drives: [],
+      driveZims: {}, // Map of device -> array of ZIM files found
       isScanning: false,
       lastScan: null,
       isWatching: false,
@@ -34,12 +35,51 @@ export const useDrivesStore = create(
             lastScan: Date.now(),
             isScanning: false
           });
+
+          // Scan each drive for ZIMs in background (don't block)
+          get().scanDrivesForZims(drives);
+
           return drives;
         } catch (error) {
           console.error('Failed to scan drives:', error);
           set({ isScanning: false });
           throw error;
         }
+      },
+
+      // Scan drives for existing ZIM files
+      scanDrivesForZims: async (drives) => {
+        if (!checkElectronAPI()) return;
+
+        const driveZims = {};
+
+        for (const drive of drives) {
+          const mountpoint = drive.mountpoints?.[0]?.path || drive.mountpoint;
+          // Skip drives without valid mount points or system paths
+          if (!mountpoint || mountpoint.includes('[') || mountpoint === '/') continue;
+
+          try {
+            const zims = await window.electronAPI.invoke('drives:scan', mountpoint);
+            if (zims && zims.length > 0) {
+              driveZims[drive.device] = zims;
+            }
+          } catch (error) {
+            // Silently ignore scan errors - drive may not be accessible
+          }
+        }
+
+        set({ driveZims });
+      },
+
+      // Get ZIM count for a drive
+      getZimCount: (devicePath) => {
+        const zims = get().driveZims[devicePath];
+        return zims ? zims.length : 0;
+      },
+
+      // Get ZIMs for a specific drive
+      getDriveZims: (devicePath) => {
+        return get().driveZims[devicePath] || [];
       },
 
       startWatching: () => {
@@ -56,6 +96,8 @@ export const useDrivesStore = create(
         window.electronAPI.on('drives:changed', (drives) => {
           console.log('Drives changed:', drives);
           set({ drives, lastScan: Date.now() });
+          // Re-scan for ZIMs when drives change
+          get().scanDrivesForZims(drives);
         });
 
         set({ isWatching: true });
@@ -79,10 +121,12 @@ export const useDrivesStore = create(
         return get().drives.filter(d => d.isUSB);
       },
 
-      // Check if drive supports large files
+      // Check if drive supports large files (case insensitive)
       supportsLargeFiles: (drive) => {
-        const largeFileFS = ['exFAT', 'NTFS', 'ext4', 'APFS', 'HFS+'];
-        return largeFileFS.includes(drive.filesystem);
+        // Import dynamically to avoid circular dependency
+        const fs = drive.filesystem?.toLowerCase();
+        const supportedFS = ['exfat', 'ntfs', 'ext4', 'ext3', 'ext2', 'btrfs', 'xfs', 'zfs', 'apfs', 'hfs+', 'hfsplus', 'fuseblk'];
+        return supportedFS.includes(fs);
       },
 
       // Check if drive is large enough (64GB+)

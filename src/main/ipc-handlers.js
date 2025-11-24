@@ -122,6 +122,34 @@ function setupIpcHandlers() {
   // Download Management Handlers
   // ========================================
 
+  ipcMain.handle(IPC_CHANNELS.DOWNLOAD_GET_LOCAL_DISK_INFO, async () => {
+    try {
+      return await downloadManager.getLocalDiskInfo();
+    } catch (error) {
+      console.error('Error getting local disk info:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.DOWNLOAD_GET_LOCATION, async () => {
+    try {
+      return downloadManager.getDownloadDir();
+    } catch (error) {
+      console.error('Error getting download location:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.DOWNLOAD_SET_LOCATION, async (event, location) => {
+    try {
+      downloadManager.setDownloadDir(location);
+      return { success: true, path: downloadManager.getDownloadDir() };
+    } catch (error) {
+      console.error('Error setting download location:', error);
+      throw error;
+    }
+  });
+
   ipcMain.handle(IPC_CHANNELS.DOWNLOAD_ADD, async (event, zimInfo, destination) => {
     try {
       return await downloadManager.addToQueue(zimInfo, destination);
@@ -186,6 +214,27 @@ function setupIpcHandlers() {
 
   ipcMain.handle(IPC_CHANNELS.DOWNLOAD_START_ALL, async () => {
     try {
+      // Set up progress callbacks for all downloads before starting
+      const allDownloads = downloadManager.getAllDownloads();
+      allDownloads.forEach((download) => {
+        downloadManager.onProgress(download.id, (progress) => {
+          const windows = require('electron').BrowserWindow.getAllWindows();
+          windows.forEach((window) => {
+            window.webContents.send(IPC_CHANNELS.DOWNLOAD_PROGRESS, progress);
+
+            // Also emit completed event when download finishes
+            if (progress.status === 'completed') {
+              console.log('Emitting download completed event for:', progress.filename);
+              window.webContents.send(IPC_CHANNELS.DOWNLOAD_COMPLETED, {
+                id: progress.id,
+                filename: progress.filename,
+                status: progress.status
+              });
+            }
+          });
+        });
+      });
+
       return await downloadManager.startAllDownloads();
     } catch (error) {
       console.error('Error starting all downloads:', error);
@@ -279,6 +328,33 @@ function setupIpcHandlers() {
       return await kiwixManager.detectInstalledReaders(usbPath);
     } catch (error) {
       console.error('Error detecting installed readers:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.KIWIX_GET_CACHE_INFO, async () => {
+    try {
+      return await kiwixManager.getCacheInfo();
+    } catch (error) {
+      console.error('Error getting Kiwix cache info:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.KIWIX_GET_CACHE_SIZE, async () => {
+    try {
+      return await kiwixManager.getCacheSize();
+    } catch (error) {
+      console.error('Error getting Kiwix cache size:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.KIWIX_CLEAR_CACHE, async (event, platform) => {
+    try {
+      return await kiwixManager.clearCache(platform);
+    } catch (error) {
+      console.error('Error clearing Kiwix cache:', error);
       throw error;
     }
   });

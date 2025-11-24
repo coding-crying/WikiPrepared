@@ -16,9 +16,118 @@ class DownloadManager {
     this.activeDownloads = 0;
     this.maxConcurrentDownloads = 2;
 
-    // Default download directory
-    this.defaultDownloadDir = path.join(app.getPath('temp'), 'kiwix-downloads');
+    // Default download directory - use persistent userData location instead of temp
+    this.defaultDownloadDir = path.join(app.getPath('userData'), 'downloads');
     fs.ensureDirSync(this.defaultDownloadDir);
+
+    // User-configurable download location
+    this.customDownloadDir = null;
+  }
+
+  /**
+   * Get the current download directory
+   * @returns {string} Download directory path
+   */
+  getDownloadDir() {
+    return this.customDownloadDir || this.defaultDownloadDir;
+  }
+
+  /**
+   * Set a custom download directory
+   * @param {string} dir - Directory path
+   */
+  setDownloadDir(dir) {
+    if (dir) {
+      fs.ensureDirSync(dir);
+      this.customDownloadDir = dir;
+    } else {
+      this.customDownloadDir = null;
+    }
+  }
+
+  /**
+   * Get local disk info for download location
+   * @returns {Promise<Object>} Disk info including free space and filesystem
+   */
+  async getLocalDiskInfo() {
+    const downloadDir = this.getDownloadDir();
+
+    try {
+      // Get disk usage using df command on Unix or wmic on Windows
+      const os = require('os');
+      const { execSync } = require('child_process');
+
+      let freeSpace = 0;
+      let totalSpace = 0;
+      let filesystem = 'unknown';
+
+      if (os.platform() === 'win32') {
+        // Windows: use wmic
+        const driveLetter = downloadDir.charAt(0).toUpperCase();
+        try {
+          const result = execSync(`wmic logicaldisk where "DeviceID='${driveLetter}:'" get FileSystem,FreeSpace,Size /format:csv`, { encoding: 'utf8' });
+          const lines = result.trim().split('\n');
+          if (lines.length >= 2) {
+            const parts = lines[1].split(',');
+            if (parts.length >= 4) {
+              filesystem = parts[1] || 'unknown';
+              freeSpace = parseInt(parts[2]) || 0;
+              totalSpace = parseInt(parts[3]) || 0;
+            }
+          }
+        } catch (e) {
+          console.warn('Failed to get Windows disk info:', e.message);
+        }
+      } else {
+        // Unix-like: use df
+        try {
+          const result = execSync(`df -P "${downloadDir}"`, { encoding: 'utf8' });
+          const lines = result.trim().split('\n');
+          if (lines.length >= 2) {
+            const parts = lines[1].split(/\s+/);
+            if (parts.length >= 4) {
+              totalSpace = parseInt(parts[1]) * 1024; // Convert from KB
+              freeSpace = parseInt(parts[3]) * 1024;
+            }
+          }
+
+          // Get filesystem type
+          const mountResult = execSync(`df -T "${downloadDir}" 2>/dev/null || df "${downloadDir}"`, { encoding: 'utf8' });
+          const mountLines = mountResult.trim().split('\n');
+          if (mountLines.length >= 2) {
+            const mountParts = mountLines[1].split(/\s+/);
+            if (mountParts.length >= 2) {
+              filesystem = mountParts[1]; // Second column is filesystem type
+            }
+          }
+        } catch (e) {
+          console.warn('Failed to get Unix disk info:', e.message);
+        }
+      }
+
+      // Check if filesystem supports large files (>4GB)
+      const supportsLargeFiles = ['ext4', 'ext3', 'xfs', 'btrfs', 'zfs', 'ntfs', 'exfat', 'apfs', 'hfs+'].includes(filesystem.toLowerCase());
+      const maxFileSize = filesystem.toLowerCase() === 'fat32' ? 4 * 1024 * 1024 * 1024 : Number.MAX_SAFE_INTEGER;
+
+      return {
+        path: downloadDir,
+        freeSpace,
+        totalSpace,
+        filesystem,
+        supportsLargeFiles,
+        maxFileSize
+      };
+    } catch (error) {
+      console.error('Error getting local disk info:', error);
+      return {
+        path: downloadDir,
+        freeSpace: 500 * 1024 * 1024 * 1024, // Fallback: 500GB
+        totalSpace: 1000 * 1024 * 1024 * 1024,
+        filesystem: 'unknown',
+        supportsLargeFiles: true,
+        maxFileSize: Number.MAX_SAFE_INTEGER
+      };
+    }
   }
 
   /**
@@ -30,7 +139,23 @@ class DownloadManager {
   async addToQueue(zimInfo, destination = null) {
     try {
       const downloadId = uuidv4();
-      const dest = destination || path.join(this.defaultDownloadDir, zimInfo.filename);
+      // Determine destination path
+      let dest;
+      if (destination) {
+        // Check if destination is an existing directory
+        let isDirectory = false;
+        try {
+          const stats = await fs.stat(destination);
+          isDirectory = stats.isDirectory();
+        } catch (e) {
+          // Path doesn't exist - check if it looks like a directory path (no .zim extension)
+          isDirectory = !destination.toLowerCase().endsWith('.zim');
+        }
+        dest = isDirectory ? path.join(destination, zimInfo.filename) : destination;
+        console.log(`Download destination: ${dest} (directory: ${isDirectory})`);
+      } else {
+        dest = path.join(this.defaultDownloadDir, zimInfo.filename);
+      }
 
       const download = {
         id: downloadId,
