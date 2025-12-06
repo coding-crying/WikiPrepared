@@ -14,6 +14,7 @@ import {
 } from '@mui/material';
 import { useAppFlowStore } from '../stores/appFlowStore';
 import { useZimsStore } from '../stores/zimsStore';
+import { useDrivesStore } from '../stores/drivesStore';
 import ProgressBar from '../components/common/ProgressBar';
 import AppLayout from '../components/layout/AppLayout';
 import { ROUTES } from '../utils/constants';
@@ -27,6 +28,7 @@ export default function TransferProgressScreen() {
   const navigate = useNavigate();
   const { selectedDrive, selectedZims, transferProgress, setTransferProgress } = useAppFlowStore();
   const { installedZims } = useZimsStore();
+  const getDrive = useDrivesStore(state => state.getDrive);
 
   const [oldVersionsToDelete, setOldVersionsToDelete] = useState([]);
   const [deleteOldVersions, setDeleteOldVersions] = useState(true);
@@ -40,16 +42,32 @@ export default function TransferProgressScreen() {
   }, []);
 
   const checkForOldVersions = async () => {
-    if (!selectedDrive) return;
+    // Get fresh drive info to ensure valid mountpoint after formatting
+    const currentDrive = selectedDrive ? getDrive(selectedDrive.device) : null;
+    
+    if (!currentDrive) {
+      console.error('Selected drive not found in current drive list');
+      alert('Error: Drive not found. Please reconnect the drive.');
+      navigate(ROUTES.DRIVE_SELECTION);
+      return;
+    }
 
     try {
-      const mountpoint = selectedDrive.mountpoints?.[0]?.path;
-      if (!mountpoint) return;
+      const mountpoint = currentDrive.mountpoints?.[0]?.path;
+      if (!mountpoint) {
+        console.error('No mountpoint found for drive');
+        alert('Error: Drive has no mount point. Try unplugging and replugging it.');
+        return;
+      }
 
       // Scan for old versions that match our selected ZIMs
       const oldVersions = installedZims.filter(installed =>
         // Logic to detect if it's an old version of what we're installing
-        true // Simplified for now
+        selectedZims.some(newZim => 
+           newZim.language === installed.language &&
+           newZim.topic === installed.topic &&
+           newZim.filename !== installed.filename // Different file = old version (usually)
+        )
       );
 
       setOldVersionsToDelete(oldVersions);
@@ -59,10 +77,12 @@ export default function TransferProgressScreen() {
         await deleteOldFiles(oldVersions);
       }
 
-      await startTransfer();
+      await startTransfer(mountpoint);
     } catch (error) {
       console.error('Failed to check old versions:', error);
-      await startTransfer(); // Continue anyway
+      // Attempt transfer anyway if possible
+      const mp = currentDrive.mountpoints?.[0]?.path;
+      if (mp) await startTransfer(mp);
     }
   };
 
@@ -76,13 +96,14 @@ export default function TransferProgressScreen() {
     }
   };
 
-  const startTransfer = async () => {
+  const startTransfer = async (mountpoint) => {
     try {
-      const mountpoint = selectedDrive.mountpoints?.[0]?.path;
       if (!mountpoint) {
-        console.error('No mountpoint found');
+        console.error('No mountpoint provided to startTransfer');
         return;
       }
+
+      console.log('Starting transfer to:', mountpoint);
 
       // Listen for transfer progress
       window.electronAPI.on('transfer:progress', handleTransferProgress);

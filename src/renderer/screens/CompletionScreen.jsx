@@ -99,10 +99,15 @@ export default function CompletionScreen() {
               {selectedZims.map((zim) => (
                 <Box key={zim.filename} sx={{ display: 'flex', alignItems: 'center', py: 0.75, gap: 1 }}>
                   <FileIcon sx={{ fontSize: 18, color: 'primary.main' }} />
-                  <Typography variant="body2" sx={{ flex: 1 }}>
-                    {getLanguageName(zim.language)} - {getScopeName(zim.scope)}
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
+                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                    <Typography variant="body2" fontWeight={500} noWrap>
+                      {zim.topic ? (zim.topic.charAt(0).toUpperCase() + zim.topic.slice(1)) : 'Wikipedia'}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary" noWrap>
+                      {getLanguageName(zim.language)} - {getScopeName(zim.scope)}
+                    </Typography>
+                  </Box>
+                  <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
                     {formatBytes(zim.size)}
                   </Typography>
                 </Box>

@@ -13,24 +13,32 @@ MODEL_NAME = "qwen3:1.7b"  # User's specific model
 
 def generate_search_queries(question):
     print("Generating search queries...")
-    prompt = f"""Task: Generate 3 distinct Wikipedia search queries.
+    prompt = f"""Task: Act as a Wikipedia Librarian. Convert the user's natural language question into 3 precise Wikipedia search terms.
     
-    Strategy:
-    1. Simple Noun Phrase: The core subject (e.g., "Bone fracture", "Fire", "Inductor").
-    2. Specific Action/Process: The specific task (e.g., "Splinting", "Fire making", "Coil winding").
-    3. Related Category: A broader field (e.g., "First aid", "Survival skills", "Electromagnetism").
+    Rules:
+    1. First Query: The most likely exact article title (often a technical term).
+    2. Second Query: A simple noun phrase describing the core object.
+    3. Third Query: The broader category or field.
+    4. NO boolean operators (AND, OR, +). NO sentences. Just phrases.
     
-    User: "How do I treat a broken leg?"
+    Examples:
+    User: "How do I sew up a deep cut?"
     Output:
-    Bone fracture
-    Splint (medicine)
-    Wilderness medicine
+    Surgical suture
+    Wound closure
+    Emergency medicine
+    
+    User: "How do I make a campfire?"
+    Output:
+    Campfire
+    Fire making
+    Survival skills
     
     User: "How to wrap copper wire for a generator?"
     Output:
     Electromagnetic coil
+    Inductor
     Solenoid
-    Wire wrapping
     
     User: "{question}"
     Output:"""
