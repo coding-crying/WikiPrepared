@@ -658,7 +658,18 @@ class DriveManager {
             } catch (e) {
               console.log(`Standard unmount failed for ${partPath}:`, e.message);
               
-              // If busy, try lazy unmount (requires root)
+              // Attempt force unmount via udisksctl (no root needed usually)
+              try {
+                 console.log(`Attempting force unmount for ${partPath}...`);
+                 await execAsync(`udisksctl unmount -b ${partPath} --force`);
+                 console.log(`Force unmount successful for ${partPath}`);
+                 unmountedAny = true;
+                 continue; 
+              } catch (forceErr) {
+                 console.log(`Force unmount failed: ${forceErr.message}`);
+              }
+              
+              // If still busy, try lazy unmount (requires root)
               if (e.message.includes('busy') || e.message.includes('target is busy')) {
                  console.log(`Device busy, attempting lazy unmount for ${partPath}...`);
                  try {

@@ -148,11 +148,12 @@ export default function DownloadProgressScreen() {
   const { showToast } = useToastStore();
   const [downloadProgress, setDownloadProgress] = useState({});
   const [isPaused, setIsPaused] = useState(false);
-  const [allComplete, setAllComplete] = useState(false);
   const [downloadLocation, setDownloadLocation] = useState(null);
   
   // Ref to prevent double-start in StrictMode
   const hasStartedRef = React.useRef(false);
+  // Ref to prevent double-navigation
+  const navigatingRef = React.useRef(false);
 
   const handleDownloadProgress = useCallback((progressData) => {
     console.log('Progress update:', progressData.filename, progressData.progress?.toFixed(1) + '%');
@@ -163,36 +164,36 @@ export default function DownloadProgressScreen() {
   }, []);
 
   // Check for completion whenever download progress changes
-  useEffect(() => {
-    if (selectedZims.length === 0) return;
+  const checkCompletion = useCallback(() => {
+    if (selectedZims.length === 0) return false;
+    return selectedZims.every(zim => {
+      const status = downloadProgress[zim.filename]?.status;
+      return status === 'completed';
+    });
+  }, [selectedZims, downloadProgress]);
 
-    const statuses = selectedZims.map(zim => ({
-      name: zim.filename,
-      status: downloadProgress[zim.filename]?.status
-    }));
-    
-    const allCompleted = statuses.every(s => s.status === 'completed');
+  const isAllCompleted = checkCompletion();
 
-    if (!allComplete) {
-       console.log('Completion Check:', statuses);
+  const performNavigation = useCallback(() => {
+    if (navigatingRef.current) return;
+    navigatingRef.current = true;
+
+    console.log('Navigating to next screen...');
+    if (downloadStrategy === DOWNLOAD_STRATEGIES.LOCAL_FIRST && selectedDrive) {
+      navigate(ROUTES.TRANSFERRING);
+    } else {
+      navigate(ROUTES.COMPLETE);
     }
+  }, [downloadStrategy, selectedDrive, navigate]);
 
-    if (allCompleted && !allComplete) {
-      console.log('All downloads locally confirmed complete. Navigating...');
-      setAllComplete(true);
-      
+  useEffect(() => {
+    if (isAllCompleted) {
+      console.log('Auto-navigation triggered');
       // Small delay for visual feedback
-      const timer = setTimeout(() => {
-        if (downloadStrategy === DOWNLOAD_STRATEGIES.LOCAL_FIRST && selectedDrive) {
-          navigate(ROUTES.TRANSFERRING);
-        } else {
-          navigate(ROUTES.COMPLETE);
-        }
-      }, 1000);
-      
+      const timer = setTimeout(performNavigation, 1000);
       return () => clearTimeout(timer);
     }
-  }, [downloadProgress, selectedZims, allComplete, downloadStrategy, selectedDrive, navigate]);
+  }, [isAllCompleted, performNavigation]);
 
   const handleDownloadCompleted = useCallback(async (data) => {
     console.log('Download completed event:', data);
@@ -273,6 +274,39 @@ export default function DownloadProgressScreen() {
     };
   }, []);
 
+  // Poll for download status every 2 seconds (Fallback for missed IPC events)
+  useEffect(() => {
+    const intervalId = setInterval(async () => {
+      // Don't poll if we are already navigating
+      if (navigatingRef.current) return;
+      
+      try {
+        const downloads = await window.electronAPI.invoke('download:get-all');
+        if (downloads && downloads.length > 0) {
+          setDownloadProgress(prev => {
+            const next = { ...prev };
+            let hasUpdates = false;
+            
+            downloads.forEach(d => {
+              // Only update if status changed or progress advanced significantly
+              const current = next[d.filename];
+              if (!current || current.status !== d.status || d.progress > (current.progress || 0) + 1) {
+                next[d.filename] = d;
+                hasUpdates = true;
+              }
+            });
+            
+            return hasUpdates ? next : prev;
+          });
+        }
+      } catch (err) {
+        console.warn('Polling status failed:', err);
+      }
+    }, 2000);
+
+    return () => clearInterval(intervalId);
+  }, []);
+
   const startDownloads = async () => {
     try {
       // Determine destination
@@ -296,10 +330,10 @@ export default function DownloadProgressScreen() {
 
       // Queue ZIM downloads
       for (const zim of selectedZims) {
-        // Case 1: Already on drive (no URL) - Skip
         if (!zim.url) {
           console.log(`Skipping download for ${zim.filename} (no URL/already local)`);
           instantCompleteCount++;
+          // Mark as completed in UI immediately
           setDownloadProgress(prev => ({
             ...prev,
             [zim.filename]: { 
@@ -312,7 +346,6 @@ export default function DownloadProgressScreen() {
           continue;
         }
 
-        // Case 2: Download (or check local cache)
         const result = await window.electronAPI.invoke('download:add', {
           url: zim.url,
           filename: zim.filename,
@@ -335,21 +368,13 @@ export default function DownloadProgressScreen() {
         }
       }
 
-      // Start all downloads (that are queued)
+      // Start all downloads
       await window.electronAPI.invoke('download:start-all');
 
       // Fast-path: If everything was instantly completed/skipped, navigate now
-      // (State updates might not have triggered useEffect yet)
       if (instantCompleteCount === selectedZims.length) {
         console.log('All items instantly complete. Navigating via fast-path...');
-        setAllComplete(true);
-        setTimeout(() => {
-          if (downloadStrategy === DOWNLOAD_STRATEGIES.LOCAL_FIRST && selectedDrive) {
-            navigate(ROUTES.TRANSFERRING);
-          } else {
-            navigate(ROUTES.COMPLETE);
-          }
-        }, 1000);
+        performNavigation();
       }
 
     } catch (error) {

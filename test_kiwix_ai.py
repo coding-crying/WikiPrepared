@@ -11,19 +11,29 @@ from strip_tags import strip_tags
 OLLAMA_URL = "http://127.0.0.1:11434/api/chat"
 MODEL_NAME = "qwen3:1.7b"  # User's specific model
 
-def extract_keywords(question):
-    print("Extracting search keywords...")
-    prompt = f"""Task: Convert the user's question into a single, specific Wikipedia article title or search phrase. 
-    Do not answer the question. Just provide the best search term.
+def generate_search_queries(question):
+    print("Generating search queries...")
+    prompt = f"""Task: Generate 3 distinct Wikipedia search queries.
     
-    Examples:
-    User: "How do I make a campfire?" -> Campfire
-    User: "Who was the first president?" -> List of presidents of the United States
-    User: "What is the capital of France?" -> Paris
-    User: "Tell me about quantum physics" -> Quantum mechanics
+    Strategy:
+    1. Simple Noun Phrase: The core subject (e.g., "Bone fracture", "Fire", "Inductor").
+    2. Specific Action/Process: The specific task (e.g., "Splinting", "Fire making", "Coil winding").
+    3. Related Category: A broader field (e.g., "First aid", "Survival skills", "Electromagnetism").
+    
+    User: "How do I treat a broken leg?"
+    Output:
+    Bone fracture
+    Splint (medicine)
+    Wilderness medicine
+    
+    User: "How to wrap copper wire for a generator?"
+    Output:
+    Electromagnetic coil
+    Solenoid
+    Wire wrapping
     
     User: "{question}"
-    Search Term:"""
+    Output:"""
 
     payload = {
         "model": MODEL_NAME,
@@ -34,46 +44,76 @@ def extract_keywords(question):
     try:
         response = requests.post(OLLAMA_URL, json=payload)
         response.raise_for_status()
-        keywords = response.json()['message']['content'].strip()
-        # Clean up if the model is chatty (remove quotes, etc)
-        keywords = keywords.replace('"', '').replace("'", "").split('\n')[0]
-        print(f"Smart Search Query: '{keywords}'")
-        return keywords
+        content = response.json()['message']['content'].strip()
+        # Split by newline and clean
+        queries = [line.strip().replace('"', '').replace('-', '').strip() for line in content.split('\n') if line.strip()]
+        # Take top 3
+        queries = queries[:3]
+        print(f"Generated Queries: {queries}")
+        return queries
     except Exception as e:
-        print(f"Error extracting keywords: {e}")
-        return question # Fallback to original
+        print(f"Error generating queries: {e}")
+        return [question]
 
-def search_zim(zim_path, query_text):
-    print(f"Searching ZIM file: {zim_path} for '{query_text}'...")
-    try:
-        zim = Archive(Path(zim_path))
-    except Exception as e:
-        print(f"Error opening ZIM file: {e}")
-        return None
-
-    searcher = Searcher(zim)
-    query = Query().set_query(query_text)
-    search = searcher.search(query)
-    
-    count = search.getEstimatedMatches()
-    print(f"Found {count} estimated matches.")
-    
-    if count == 0:
-        return []
-
-    # Get top 3 results
-    results_limit = 3
-    results = list(search.getResults(0, results_limit))
-    
-    if not results:
+def rerank_results(question, candidates):
+    print(f"Re-ranking {len(candidates)} candidates...")
+    if not candidates:
         return []
         
-    print(f"--- Top {len(results)} Search Results ---")
-    for i, res in enumerate(results):
-        print(f"{i+1}. {res}")
-    print("--------------------------------")
+    candidates_str = "\n".join(candidates)
     
-    return results
+    prompt = f"""Task: Select the top 3 most relevant Wikipedia article titles from the list below that would best answer the user's question.
+    
+    User Question: \"{question}\"\n    
+    Candidate Articles:
+    {candidates_str}
+    
+    Output: Return ONLY the exact titles of the 3 best articles, one per line. If none are good, pick the closest ones.
+    """
+
+    payload = {
+        "model": MODEL_NAME,
+        "messages": [{"role": "user", "content": prompt}],
+        "stream": False
+    }
+    
+    try:
+        response = requests.post(OLLAMA_URL, json=payload)
+        response.raise_for_status()
+        content = response.json()['message']['content'].strip()
+        
+        # Naive parsing: look for lines that exist in the candidates list
+        best_picks = []
+        for line in content.split('\n'):
+            clean_line = line.strip().replace('"', '').replace('*', '').strip()
+            # Fuzzy match or exact match check
+            for cand in candidates:
+                if clean_line in cand or cand in clean_line:
+                    if cand not in best_picks:
+                        best_picks.append(cand)
+        
+        # If LLM failed to return valid lines, fall back to top 3 original candidates
+        if not best_picks:
+            print("LLM re-ranking vague, falling back to search order.")
+            return candidates[:3]
+            
+        print(f"Selected Best Articles: {best_picks[:3]}")
+        return best_picks[:3]
+        
+    except Exception as e:
+        print(f"Error during re-ranking: {e}")
+        return candidates[:3]
+
+def search_zim_raw(zim_path, query_text, limit=5):
+    # Helper to get raw results without printing
+    try:
+        zim = Archive(Path(zim_path))
+        searcher = Searcher(zim)
+        query = Query().set_query(query_text)
+        search = searcher.search(query)
+        return list(search.getResults(0, limit))
+    except:
+        return []
 
 def read_article(zim_path, article_path):
     print(f"Reading article: {article_path}...")
@@ -130,34 +170,41 @@ def main():
         print(f"Error: File not found at {zim_path}")
         sys.exit(1)
 
-    # 1. Smart Search
-    # First, get a better search term
-    search_term = extract_keywords(question)
+    # 1. Generate Queries
+    queries = generate_search_queries(question)
     
-    # Then search with that term
-    article_paths = search_zim(zim_path, search_term)
+    # 2. Search & Aggregate
+    all_candidates = []
+    for q in queries:
+        results = search_zim_raw(zim_path, q, limit=5)
+        for res in results:
+            if res not in all_candidates:
+                all_candidates.append(res)
     
-    # If smart search fails, try original question as fallback
-    if not article_paths and search_term != question:
-        print("Smart search failed, trying original question...")
-        article_paths = search_zim(zim_path, question)
-        
-    if not article_paths:
-        print("No relevant articles found in ZIM file.")
+    if not all_candidates:
+        # Fallback to original question
+        print("Smart queries returned nothing. Trying raw question...")
+        all_candidates = search_zim_raw(zim_path, question, limit=10)
+
+    if not all_candidates:
+        print("No articles found.")
         sys.exit(0)
 
-    # 2. Read & Aggregate
+    # 3. Re-rank
+    top_articles = rerank_results(question, all_candidates)
+
+    # 4. Read & Aggregate Content
     full_context = ""
-    for path in article_paths:
+    for path in top_articles:
         content = read_article(zim_path, path)
         if content:
-            full_context += f"\n\n--- Article: {path} ---\n{content}"
+            full_context += f"\n\n--- Article: {path} ---\n{content[:5000]}" # Limit per article to save context
 
     if not full_context:
         print("Could not extract content.")
         sys.exit(1)
 
-    # 3. AI Answer
+    # 5. AI Answer
     print("\n--- Generative Answer ---")
     answer = query_ollama(full_context, question)
     print(answer)
