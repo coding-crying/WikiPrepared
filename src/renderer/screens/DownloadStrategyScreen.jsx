@@ -1,14 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Box, Card, CardContent, Typography, Chip, Stack, Alert, CircularProgress } from '@mui/material';
+import { Box, Card, CardContent, Typography, Chip, Stack, Alert, CircularProgress, Button } from '@mui/material';
 import {
   CloudDownload as CloudIcon,
   Usb as UsbIcon,
   CheckCircle as CheckIcon,
   Warning as WarningIcon,
-  Error as ErrorIcon
+  Error as ErrorIcon,
+  Delete as DeleteIcon
 } from '@mui/icons-material';
 import { useAppFlowStore } from '../stores/appFlowStore';
+import { useZimsStore } from '../stores/zimsStore';
 import AppLayout from '../components/layout/AppLayout';
 import NavigationButtons from '../components/layout/NavigationButtons';
 import { ROUTES, DOWNLOAD_STRATEGIES, STORAGE } from '../utils/constants';
@@ -24,15 +26,44 @@ export default function DownloadStrategyScreen() {
   const {
     setDownloadStrategy,
     getTotalSize,
-    selectedZims
+    getAvailableSpace,
+    selectedZims,
+    selectedDrive
   } = useAppFlowStore();
 
+  const { installedZims } = useZimsStore();
+
   const totalSize = getTotalSize();
+  const usbFreeSpace = getAvailableSpace();
+  
   const [localDiskInfo, setLocalDiskInfo] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
 
   // Get the largest file size to check filesystem compatibility
   const largestFileSize = selectedZims.reduce((max, zim) => Math.max(max, zim.size || 0), 0);
+
+  // Identify conflicting ZIMs (same language/topic but different version/filename) to recover space
+  const conflictingZims = React.useMemo(() => {
+      if (!selectedZims.length || !installedZims.length) return [];
+      
+      const conflicts = [];
+      selectedZims.forEach(newZim => {
+          // Simple matching logic: same language and topic
+          // In a real app, we might want stricter metadata matching
+          const oldZim = installedZims.find(z => 
+              z.language === newZim.language && 
+              z.topic === newZim.topic && 
+              z.scope === newZim.scope &&
+              z.filename !== newZim.filename
+          );
+          if (oldZim) conflicts.push(oldZim);
+      });
+      return conflicts;
+  }, [selectedZims, installedZims]);
+
+  const recoverableSpace = conflictingZims.reduce((acc, zim) => acc + zim.size, 0);
+  const usbHasSpaceRaw = usbFreeSpace >= totalSize;
+  const usbHasSpaceWithDelete = (usbFreeSpace + recoverableSpace) >= totalSize;
 
   useEffect(() => {
     async function fetchLocalDiskInfo() {
@@ -61,8 +92,43 @@ export default function DownloadStrategyScreen() {
       : !localDiskInfo.supportsLargeFiles && largestFileSize > STORAGE.FAT32_MAX_FILE_SIZE
         ? `Filesystem (${localDiskInfo.filesystem}) doesn't support files over 4GB`
         : null;
+  
+  // Direct to USB availability
+  // It's available if we have raw space OR if we can recover enough space by deleting old versions
+  const canUseDirectToUSB = usbHasSpaceRaw || usbHasSpaceWithDelete;
 
-  const handleChoice = (strategy) => {
+  const handleChoice = async (strategy) => {
+    if (strategy === DOWNLOAD_STRATEGIES.DIRECT_TO_USB && !usbHasSpaceRaw && usbHasSpaceWithDelete) {
+        // We need to delete old files first
+        const confirmed = confirm(
+            `Not enough space on USB.\n\n` +
+            `We need to delete ${conflictingZims.length} old version(s) to free up ${formatBytes(recoverableSpace)}.\n\n` +
+            `Files to be deleted:\n${conflictingZims.map(z => `• ${z.filename}`).join('\n')}\n\n` +
+            `Proceed?`
+        );
+        
+        if (!confirmed) return;
+
+        // Perform deletion
+        try {
+             setIsLoading(true);
+             for (const zim of conflictingZims) {
+                 console.log('Deleting old file:', zim.path);
+                 await window.electronAPI.invoke('file:delete', zim.path);
+             }
+             // Give the filesystem a moment to update
+             await new Promise(resolve => setTimeout(resolve, 1000));
+             
+             // We continue to the next screen. The drive watcher will eventually update the free space,
+             // but for the download logic, we know we just cleared space.
+             setIsLoading(false);
+        } catch (err) {
+            setIsLoading(false);
+            alert('Failed to delete old files: ' + err.message);
+            return;
+        }
+    }
+
     setDownloadStrategy(strategy);
     navigate(ROUTES.DOWNLOADING);
   };
@@ -160,16 +226,17 @@ export default function DownloadStrategyScreen() {
           {/* Direct to USB Option */}
           <Card
             sx={{
-              cursor: 'pointer',
+              cursor: canUseDirectToUSB ? 'pointer' : 'not-allowed',
               border: 2,
-              borderColor: !canUseLocalFirst ? 'primary.main' : 'transparent',
+              borderColor: (!canUseLocalFirst && canUseDirectToUSB) ? 'primary.main' : 'transparent',
+              opacity: canUseDirectToUSB ? 1 : 0.6,
               transition: 'all 0.2s ease-in-out',
-              '&:hover': {
+              '&:hover': canUseDirectToUSB ? {
                 transform: 'translateY(-4px)',
                 boxShadow: 6
-              }
+              } : {}
             }}
-            onClick={() => handleChoice(DOWNLOAD_STRATEGIES.DIRECT_TO_USB)}
+            onClick={() => canUseDirectToUSB && handleChoice(DOWNLOAD_STRATEGIES.DIRECT_TO_USB)}
           >
             <CardContent sx={{ p: 3 }}>
               <Box sx={{ display: 'flex', alignItems: 'flex-start', mb: 2 }}>
@@ -179,7 +246,7 @@ export default function DownloadStrategyScreen() {
                     <Typography variant="h6">
                       Download Directly to USB
                     </Typography>
-                    {!canUseLocalFirst && (
+                    {!canUseLocalFirst && canUseDirectToUSB && (
                       <Chip label="Available" color="primary" size="small" />
                     )}
                   </Box>
@@ -208,8 +275,22 @@ export default function DownloadStrategyScreen() {
                       Keep USB plugged in during download
                     </Typography>
                   </Box>
+                  {(!usbHasSpaceRaw && usbHasSpaceWithDelete) && (
+                     <Box sx={{ display: 'flex', alignItems: 'center', mt: 1 }}>
+                        <DeleteIcon sx={{ fontSize: 18, color: 'error.main', mr: 1 }} />
+                        <Typography variant="caption" sx={{ color: 'error.main', fontWeight: 'bold' }}>
+                           Must delete old versions ({formatBytes(recoverableSpace)}) to fit
+                        </Typography>
+                     </Box>
+                  )}
                 </Stack>
               </Box>
+              
+              {!canUseDirectToUSB && (
+                 <Alert severity="error" sx={{ mt: 2 }}>
+                    Not enough space on USB drive (need {formatBytes(totalSize)}, have {formatBytes(usbFreeSpace)}).
+                 </Alert>
+              )}
             </CardContent>
           </Card>
         </Box>

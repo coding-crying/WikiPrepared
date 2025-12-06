@@ -1,6 +1,7 @@
 const axios = require('axios');
 const fs = require('fs-extra');
 const path = require('path');
+const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
 const progressStream = require('progress-stream');
 const { app } = require('electron');
@@ -138,6 +139,10 @@ class DownloadManager {
    */
   async addToQueue(zimInfo, destination = null) {
     try {
+      if (!zimInfo || !zimInfo.url) {
+         throw new Error('Invalid ZIM info: URL is missing');
+      }
+
       const downloadId = uuidv4();
       // Determine destination path
       let dest;
@@ -156,6 +161,26 @@ class DownloadManager {
       } else {
         dest = path.join(this.defaultDownloadDir, zimInfo.filename);
       }
+      
+      // Check if file already exists and is complete
+      let initialStatus = DOWNLOAD_STATUS.QUEUED;
+      let initialProgress = 0;
+      let initialDownloaded = 0;
+      
+      try {
+         if (await fs.pathExists(dest)) {
+            const stats = await fs.stat(dest);
+            // If size matches (fuzzy match for now, ideally checksum)
+            if (zimInfo.size && Math.abs(stats.size - zimInfo.size) < 1024) {
+               console.log(`File already exists and size matches: ${zimInfo.filename}. Marking as completed.`);
+               initialStatus = DOWNLOAD_STATUS.COMPLETED;
+               initialProgress = 100;
+               initialDownloaded = stats.size;
+            }
+         }
+      } catch (err) {
+         console.warn('Error checking existing file:', err);
+      }
 
       const download = {
         id: downloadId,
@@ -163,21 +188,21 @@ class DownloadManager {
         filename: zimInfo.filename,
         destination: dest,
         zimInfo,
-        status: DOWNLOAD_STATUS.QUEUED,
+        status: initialStatus,
         totalSize: zimInfo.size || 0,
-        downloadedSize: 0,
-        progress: 0,
+        downloadedSize: initialDownloaded,
+        progress: initialProgress,
         speed: 0,
         eta: 0,
         error: null,
-        startTime: null,
-        endTime: null,
+        startTime: initialStatus === DOWNLOAD_STATUS.COMPLETED ? Date.now() : null,
+        endTime: initialStatus === DOWNLOAD_STATUS.COMPLETED ? Date.now() : null,
         cancelToken: null,
       };
 
       this.downloads.set(downloadId, download);
 
-      console.log(`Added download to queue: ${zimInfo.filename}`);
+      console.log(`Added download to queue: ${zimInfo.filename} (Status: ${initialStatus})`);
 
       return download;
     } catch (error) {
@@ -198,8 +223,16 @@ class DownloadManager {
       throw new Error('Download not found');
     }
 
-    if (download.status === DOWNLOAD_STATUS.DOWNLOADING) {
-      throw new Error('Download already in progress');
+    // Idempotency check: If already downloading or completed, return existing download
+    if (download.status === DOWNLOAD_STATUS.DOWNLOADING || download.status === DOWNLOAD_STATUS.COMPLETED) {
+      console.log(`Download ${download.filename} is already ${download.status}, skipping start.`);
+      
+      // If completed, ensure we emit the progress event so listeners (renderer) know it's done
+      if (download.status === DOWNLOAD_STATUS.COMPLETED) {
+        this.emitProgress(downloadId);
+      }
+      
+      return download;
     }
 
     try {
@@ -261,6 +294,24 @@ class DownloadManager {
         writer.on('error', reject);
         response.data.on('error', reject);
       });
+
+      // Checksum verification if available
+      if (download.zimInfo && download.zimInfo.sha256) {
+        download.status = DOWNLOAD_STATUS.VERIFYING;
+        this.emitProgress(downloadId);
+        
+        try {
+          const isValid = await this.verifyDownload(downloadId, download.zimInfo.sha256);
+          if (!isValid) {
+             throw new Error('Checksum verification failed');
+          }
+        } catch (verifyErr) {
+           console.error(`Verification failed for ${download.filename}:`, verifyErr);
+           // Depending on strictness, we might want to fail the download or just warn.
+           // For now, let's treat it as an error to be safe.
+           throw verifyErr; 
+        }
+      }
 
       // Download completed
       download.status = DOWNLOAD_STATUS.COMPLETED;
@@ -569,9 +620,9 @@ class DownloadManager {
   }
 
   /**
-   * Verify download integrity (placeholder for checksum verification)
+   * Verify download integrity using SHA256 checksum
    * @param {string} downloadId - Download ID
-   * @param {string} expectedChecksum - Expected checksum
+   * @param {string} expectedChecksum - Expected SHA256 checksum
    * @returns {Promise<boolean>} True if valid
    */
   async verifyDownload(downloadId, expectedChecksum) {
@@ -580,11 +631,39 @@ class DownloadManager {
     if (!download) {
       throw new Error('Download not found');
     }
+    
+    if (!expectedChecksum) {
+       console.warn(`No checksum provided for verification of ${download.filename}`);
+       return true; // Skip verification if no checksum
+    }
 
-    // TODO: Implement checksum verification
-    console.log('Checksum verification not yet implemented');
-
-    return true;
+    console.log(`Verifying checksum for ${download.filename}...`);
+    
+    try {
+        return new Promise((resolve, reject) => {
+            const hash = crypto.createHash('sha256');
+            const stream = fs.createReadStream(download.destination);
+            
+            stream.on('data', (data) => hash.update(data));
+            stream.on('end', () => {
+                const fileHash = hash.digest('hex');
+                console.log(`Checksum result for ${download.filename}: ${fileHash} (expected ${expectedChecksum})`);
+                
+                if (fileHash.toLowerCase() === expectedChecksum.toLowerCase()) {
+                    resolve(true);
+                } else {
+                    resolve(false);
+                }
+            });
+            stream.on('error', (err) => {
+                 console.error('Error reading file for checksum:', err);
+                 reject(err);
+            });
+        });
+    } catch (error) {
+        console.error('Verification error:', error);
+        throw error;
+    }
   }
 }
 

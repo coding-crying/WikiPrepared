@@ -1,13 +1,20 @@
 import React from 'react';
 import { Card, CardActionArea, Box, Typography, Chip } from '@mui/material';
-import { CheckCircle as CheckIcon, Update as UpdateIcon, MenuBook as BookIcon, Verified as VerifiedIcon, HelpOutline as UnknownIcon } from '@mui/icons-material';
+import { 
+  CheckCircle as CheckIcon, 
+  Update as UpdateIcon, 
+  MenuBook as BookIcon, 
+  Verified as VerifiedIcon, 
+  HelpOutline as UnknownIcon,
+  ThumbUp as RecommendedIcon 
+} from '@mui/icons-material';
 import { formatBytes, formatDate } from '../../utils/formatters';
 import { getScopeName } from '../../utils/constants';
 
 /**
  * ZIM card item with selection state
  */
-export default function ZimListItem({ zim, isSelected, onToggle, showUpdate = false }) {
+export default function ZimListItem({ zim, isSelected, onToggle, showUpdate = false, isRecommended = false, sx = {} }) {
   const getScopeDisplay = (scope) => {
     return getScopeName(scope);
   };
@@ -21,18 +28,24 @@ export default function ZimListItem({ zim, isSelected, onToggle, showUpdate = fa
   return (
     <Card
       sx={{
-        bgcolor: isSelected ? 'rgba(76, 175, 80, 0.1)' : 'background.paper',
+        bgcolor: isSelected ? 'rgba(76, 175, 80, 0.1)' : (isRecommended ? 'rgba(33, 150, 243, 0.05)' : 'background.paper'),
         border: '2px solid',
-        borderColor: isSelected ? 'success.main' : 'divider',
+        borderColor: isSelected 
+          ? 'success.main' 
+          : (isRecommended ? 'primary.main' : 'divider'),
         transition: 'all 0.2s ease',
+        position: 'relative',
         '&:hover': {
-          borderColor: isSelected ? 'success.main' : 'rgba(255, 255, 255, 0.3)',
+          borderColor: isSelected 
+            ? 'success.main' 
+            : (isRecommended ? 'primary.main' : 'rgba(255, 255, 255, 0.3)'),
           transform: 'translateY(-1px)'
-        }
+        },
+        ...sx
       }}
     >
-      <CardActionArea onClick={onToggle} sx={{ p: 1.5 }}>
-        <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.5 }}>
+      <CardActionArea onClick={onToggle} sx={{ p: 1.5, height: '100%' }}>
+        <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.5, height: '100%' }}>
           {/* Icon / Selection indicator */}
           <Box
             sx={{
@@ -42,20 +55,29 @@ export default function ZimListItem({ zim, isSelected, onToggle, showUpdate = fa
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              bgcolor: isSelected ? 'success.main' : 'action.hover',
+              bgcolor: isSelected 
+                ? 'success.main' 
+                : (isRecommended ? 'primary.main' : 'action.hover'),
               flexShrink: 0
             }}
           >
             {isSelected ? (
               <CheckIcon sx={{ fontSize: 20, color: 'white' }} />
+            ) : isRecommended ? (
+              <RecommendedIcon sx={{ fontSize: 20, color: 'white' }} />
             ) : (
               <BookIcon sx={{ fontSize: 20, color: 'text.secondary' }} />
             )}
           </Box>
 
           {/* Content */}
-          <Box sx={{ flex: 1, minWidth: 0 }}>
-            <Typography variant="body2" fontWeight={600} noWrap>
+          <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+            <Typography 
+              variant={isRecommended ? "subtitle1" : "body2"} 
+              fontWeight={600} 
+              noWrap={!isRecommended}
+              sx={isRecommended ? { lineHeight: 1.2, mb: 0.5 } : {}}
+            >
               {zim.valid !== false && zim.topic
                 ? `${getTopicDisplay(zim.topic)} - ${getScopeDisplay(zim.scope)}`
                 : zim.filename?.replace(/\.zim$/i, '') || 'ZIM File'}
@@ -69,6 +91,14 @@ export default function ZimListItem({ zim, isSelected, onToggle, showUpdate = fa
 
           {/* Size and update badge */}
           <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 0.5, flexShrink: 0 }}>
+            {isRecommended && (
+              <Chip
+                label="Recommended"
+                color="primary"
+                size="small"
+                sx={{ height: 22, fontSize: '0.65rem', fontWeight: 700 }}
+              />
+            )}
             <Chip
               label={formatBytes(zim.size)}
               size="small"

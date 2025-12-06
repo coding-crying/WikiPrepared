@@ -25,6 +25,7 @@ export default function DriveCard({ drive, isSelected, onSelect }) {
   // Get ZIM info from store
   const driveZims = useDrivesStore(state => state.getDriveZims(drive.device));
   const zimCount = driveZims.length;
+  const updateCount = useDrivesStore(state => state.getUpdateCount ? state.getUpdateCount(drive.device) : 0);
 
   // Filesystem display info
   const getFilesystemInfo = () => {
@@ -85,18 +86,34 @@ export default function DriveCard({ drive, isSelected, onSelect }) {
             </Typography>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               {zimCount > 0 ? (
-                <Tooltip
-                  title={`${zimCount} Wikipedia file${zimCount > 1 ? 's' : ''} found - Update or add content`}
-                  arrow
-                >
-                  <Chip
-                    icon={<ZimIcon sx={{ fontSize: 12 }} />}
-                    label={`${zimCount} ZIM${zimCount > 1 ? 's' : ''}`}
-                    size="small"
-                    color="success"
-                    sx={{ height: 20, fontSize: '0.65rem', '& .MuiChip-icon': { ml: 0.5 } }}
-                  />
-                </Tooltip>
+                <>
+                  <Tooltip
+                    title={`${zimCount} Wikipedia file${zimCount > 1 ? 's' : ''} found`}
+                    arrow
+                  >
+                    <Chip
+                      icon={<ZimIcon sx={{ fontSize: 12 }} />}
+                      label={`${zimCount} ZIM${zimCount > 1 ? 's' : ''}`}
+                      size="small"
+                      color="success"
+                      sx={{ height: 20, fontSize: '0.65rem', '& .MuiChip-icon': { ml: 0.5 } }}
+                    />
+                  </Tooltip>
+                  {updateCount > 0 && (
+                    <Tooltip
+                      title={`${updateCount} update${updateCount > 1 ? 's' : ''} available`}
+                      arrow
+                    >
+                      <Chip
+                        icon={<WarningIcon sx={{ fontSize: 12 }} />}
+                        label={`${updateCount} Update${updateCount > 1 ? 's' : ''}`}
+                        size="small"
+                        color="warning"
+                        sx={{ height: 20, fontSize: '0.65rem', '& .MuiChip-icon': { ml: 0.5 } }}
+                      />
+                    </Tooltip>
+                  )}
+                </>
               ) : (
                 <Chip
                   label="Empty"

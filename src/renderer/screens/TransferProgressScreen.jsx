@@ -25,7 +25,7 @@ import { formatBytes } from '../utils/formatters';
  */
 export default function TransferProgressScreen() {
   const navigate = useNavigate();
-  const { selectedDrive, transferProgress, setTransferProgress } = useAppFlowStore();
+  const { selectedDrive, selectedZims, transferProgress, setTransferProgress } = useAppFlowStore();
   const { installedZims } = useZimsStore();
 
   const [oldVersionsToDelete, setOldVersionsToDelete] = useState([]);
@@ -91,7 +91,8 @@ export default function TransferProgressScreen() {
 
       // Start transfer
       await window.electronAPI.invoke('transfer:start', {
-        destination: mountpoint
+        destination: mountpoint,
+        filesToTransfer: selectedZims.map(z => z.filename)
       });
     } catch (error) {
       console.error('Failed to start transfer:', error);

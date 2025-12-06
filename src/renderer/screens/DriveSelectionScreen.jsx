@@ -204,6 +204,7 @@ export default function DriveSelectionScreen() {
             onBack={handleBack}
             onNext={handleContinue}
             nextDisabled={!hasSelection}
+            nextDisabledTooltip="Please select a USB drive or choose local download"
           />
         </Box>
       </Box>

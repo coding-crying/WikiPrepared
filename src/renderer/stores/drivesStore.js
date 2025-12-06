@@ -15,6 +15,7 @@ export const useDrivesStore = create(
     (set, get) => ({
       drives: [],
       driveZims: {}, // Map of device -> array of ZIM files found
+      driveUpdates: {}, // Map of device -> array of updates available
       isScanning: false,
       lastScan: null,
       isWatching: false,
@@ -52,6 +53,7 @@ export const useDrivesStore = create(
         if (!checkElectronAPI()) return;
 
         const driveZims = {};
+        const driveUpdates = {};
 
         for (const drive of drives) {
           const mountpoint = drive.mountpoints?.[0]?.path || drive.mountpoint;
@@ -62,19 +64,28 @@ export const useDrivesStore = create(
             const zims = await window.electronAPI.invoke('drives:scan', mountpoint);
             if (zims && zims.length > 0) {
               driveZims[drive.device] = zims;
+              
+              // Update check disabled for now as it was showing false positives
+              // driveUpdates[drive.device] = ...
             }
           } catch (error) {
             // Silently ignore scan errors - drive may not be accessible
           }
         }
 
-        set({ driveZims });
+        set({ driveZims, driveUpdates });
       },
 
       // Get ZIM count for a drive
       getZimCount: (devicePath) => {
         const zims = get().driveZims[devicePath];
         return zims ? zims.length : 0;
+      },
+
+      // Get update count for a drive
+      getUpdateCount: (devicePath) => {
+        const updates = get().driveUpdates[devicePath];
+        return updates ? updates.length : 0;
       },
 
       // Get ZIMs for a specific drive

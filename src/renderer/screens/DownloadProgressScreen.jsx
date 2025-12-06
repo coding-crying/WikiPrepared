@@ -16,9 +16,11 @@ import {
   ArrowBack,
   CheckCircle as CheckIcon,
   Error as ErrorIcon,
-  Schedule as QueuedIcon
+  Schedule as QueuedIcon,
+  FolderOpen as FolderIcon
 } from '@mui/icons-material';
 import { useAppFlowStore } from '../stores/appFlowStore';
+import { useToastStore } from '../stores/toastStore';
 import AppLayout from '../components/layout/AppLayout';
 import { ROUTES, DOWNLOAD_STRATEGIES } from '../utils/constants';
 import { formatBytes, formatSpeed, formatDuration } from '../utils/formatters';
@@ -33,6 +35,7 @@ function DownloadItem({ filename, status, progress, downloadedSize, totalSize, s
         return <CheckIcon sx={{ color: 'success.main', fontSize: 20 }} />;
       case 'error':
         return <ErrorIcon sx={{ color: 'error.main', fontSize: 20 }} />;
+      case 'verifying':
       case 'downloading':
         return null;
       default:
@@ -46,6 +49,8 @@ function DownloadItem({ filename, status, progress, downloadedSize, totalSize, s
         return 'Completed';
       case 'error':
         return 'Failed';
+      case 'verifying':
+        return 'Verifying...';
       case 'downloading':
         return `${progress.toFixed(1)}%`;
       case 'paused':
@@ -57,7 +62,7 @@ function DownloadItem({ filename, status, progress, downloadedSize, totalSize, s
 
   return (
     <Box sx={{ p: 1.5, bgcolor: 'background.paper', borderRadius: 1, border: '1px solid', borderColor: 'divider' }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: status === 'downloading' || status === 'paused' ? 1 : 0 }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: status === 'downloading' || status === 'paused' || status === 'verifying' ? 1 : 0 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flex: 1, minWidth: 0 }}>
           {getStatusIcon()}
           <Typography variant="body2" fontWeight={500} noWrap sx={{ flex: 1, fontSize: '0.8rem' }}>
@@ -67,12 +72,12 @@ function DownloadItem({ filename, status, progress, downloadedSize, totalSize, s
         <Chip
           label={getStatusLabel()}
           size="small"
-          color={status === 'completed' ? 'success' : status === 'error' ? 'error' : status === 'downloading' ? 'primary' : 'default'}
+          color={status === 'completed' ? 'success' : status === 'error' ? 'error' : status === 'verifying' ? 'info' : status === 'downloading' ? 'primary' : 'default'}
           sx={{ ml: 1, height: 22, fontSize: '0.7rem' }}
         />
       </Box>
 
-      {/* Progress bar for active downloads */}
+      {/* Progress bar and details for active downloads */}
       {(status === 'downloading' || status === 'paused') && (
         <>
           <LinearProgress
@@ -95,6 +100,25 @@ function DownloadItem({ filename, status, progress, downloadedSize, totalSize, s
               </Typography>
             )}
           </Box>
+        </>
+      )}
+
+      {/* Verifying state */}
+      {status === 'verifying' && (
+        <>
+           <LinearProgress
+            variant="indeterminate"
+            color="info"
+            sx={{
+              height: 6,
+              borderRadius: 1,
+              mb: 0.5,
+              bgcolor: 'action.hover'
+            }}
+          />
+          <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
+            Verifying file integrity...
+          </Typography>
         </>
       )}
 
@@ -121,9 +145,14 @@ export default function DownloadProgressScreen() {
     downloadStrategy
   } = useAppFlowStore();
 
+  const { showToast } = useToastStore();
   const [downloadProgress, setDownloadProgress] = useState({});
   const [isPaused, setIsPaused] = useState(false);
   const [allComplete, setAllComplete] = useState(false);
+  const [downloadLocation, setDownloadLocation] = useState(null);
+  
+  // Ref to prevent double-start in StrictMode
+  const hasStartedRef = React.useRef(false);
 
   const handleDownloadProgress = useCallback((progressData) => {
     console.log('Progress update:', progressData.filename, progressData.progress?.toFixed(1) + '%');
@@ -132,6 +161,38 @@ export default function DownloadProgressScreen() {
       [progressData.filename]: progressData
     }));
   }, []);
+
+  // Check for completion whenever download progress changes
+  useEffect(() => {
+    if (selectedZims.length === 0) return;
+
+    const statuses = selectedZims.map(zim => ({
+      name: zim.filename,
+      status: downloadProgress[zim.filename]?.status
+    }));
+    
+    const allCompleted = statuses.every(s => s.status === 'completed');
+
+    if (!allComplete) {
+       console.log('Completion Check:', statuses);
+    }
+
+    if (allCompleted && !allComplete) {
+      console.log('All downloads locally confirmed complete. Navigating...');
+      setAllComplete(true);
+      
+      // Small delay for visual feedback
+      const timer = setTimeout(() => {
+        if (downloadStrategy === DOWNLOAD_STRATEGIES.LOCAL_FIRST && selectedDrive) {
+          navigate(ROUTES.TRANSFERRING);
+        } else {
+          navigate(ROUTES.COMPLETE);
+        }
+      }, 1000);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [downloadProgress, selectedZims, allComplete, downloadStrategy, selectedDrive, navigate]);
 
   const handleDownloadCompleted = useCallback(async (data) => {
     console.log('Download completed event:', data);
@@ -143,30 +204,11 @@ export default function DownloadProgressScreen() {
         ...prev,
         [filename]: { ...prev[filename], status: 'completed', progress: 100 }
       }));
+
+      // Show toast for individual download completion
+      showToast(`Download complete: ${filename}`, 'success', 4000);
     }
-
-    // Check if all downloads are complete
-    try {
-      const allDownloads = await window.electronAPI.invoke('download:get-all');
-      console.log('All downloads status:', allDownloads.map(d => `${d.filename}: ${d.status}`));
-
-      if (allDownloads.length > 0 && allDownloads.every(d => d.status === 'completed')) {
-        console.log('All downloads complete! Navigating...');
-        setAllComplete(true);
-
-        // Small delay to show completion before navigating
-        setTimeout(() => {
-          if (downloadStrategy === DOWNLOAD_STRATEGIES.LOCAL_FIRST && selectedDrive) {
-            navigate(ROUTES.TRANSFERRING);
-          } else {
-            navigate(ROUTES.COMPLETE);
-          }
-        }, 1000);
-      }
-    } catch (error) {
-      console.error('Error checking download status:', error);
-    }
-  }, [downloadStrategy, selectedDrive, navigate]);
+  }, [showToast]);
 
   // Calculate overall progress from individual downloads
   const overallProgress = React.useMemo(() => {
@@ -194,9 +236,28 @@ export default function DownloadProgressScreen() {
 
   const handleDownloadError = useCallback((error) => {
     console.error('Download error:', error);
-  }, []);
+    const filename = error?.filename || 'Unknown file';
+    const message = error?.message || 'Unknown error';
+    showToast(`Download failed: ${filename} - ${message}`, 'error', 8000);
+  }, [showToast]);
 
   useEffect(() => {
+    if (hasStartedRef.current) return;
+    hasStartedRef.current = true;
+
+    // Fetch download location if downloading locally
+    const fetchDownloadLocation = async () => {
+      if (downloadStrategy !== DOWNLOAD_STRATEGIES.DIRECT_TO_USB) {
+        try {
+          const location = await window.electronAPI.invoke('download:get-location');
+          setDownloadLocation(location);
+        } catch (error) {
+          console.error('Failed to get download location:', error);
+        }
+      }
+    };
+    fetchDownloadLocation();
+
     // Start downloads
     startDownloads();
 
@@ -219,17 +280,78 @@ export default function DownloadProgressScreen() {
         ? selectedDrive?.mountpoints?.[0]?.path
         : null;
 
+      let instantCompleteCount = 0;
+
+      // Mock complete readers since we don't download them yet
+      // This prevents them from looking "stuck" in the UI
+      for (const reader of selectedReaders) {
+         // Use a special key for readers in progress map? 
+         // DownloadItem uses `Kiwix Reader (${platform})` as filename
+         const key = `Kiwix Reader (${reader})`;
+         setDownloadProgress(prev => ({
+            ...prev,
+            [key]: { status: 'completed', progress: 100 }
+         }));
+      }
+
       // Queue ZIM downloads
       for (const zim of selectedZims) {
-        await window.electronAPI.invoke('download:add', {
+        // Case 1: Already on drive (no URL) - Skip
+        if (!zim.url) {
+          console.log(`Skipping download for ${zim.filename} (no URL/already local)`);
+          instantCompleteCount++;
+          setDownloadProgress(prev => ({
+            ...prev,
+            [zim.filename]: { 
+              status: 'completed', 
+              progress: 100,
+              downloadedSize: zim.size,
+              totalSize: zim.size 
+            }
+          }));
+          continue;
+        }
+
+        // Case 2: Download (or check local cache)
+        const result = await window.electronAPI.invoke('download:add', {
           url: zim.url,
           filename: zim.filename,
           size: zim.size
         }, destination);
+
+        // If backend reports it's already completed (found locally), update UI immediately
+        if (result.status === 'completed') {
+          console.log(`Download already completed (cached): ${zim.filename}`);
+          instantCompleteCount++;
+          setDownloadProgress(prev => ({
+            ...prev,
+            [zim.filename]: { 
+              status: 'completed', 
+              progress: 100,
+              downloadedSize: result.totalSize,
+              totalSize: result.totalSize 
+            }
+          }));
+        }
       }
 
-      // Start all downloads
+      // Start all downloads (that are queued)
       await window.electronAPI.invoke('download:start-all');
+
+      // Fast-path: If everything was instantly completed/skipped, navigate now
+      // (State updates might not have triggered useEffect yet)
+      if (instantCompleteCount === selectedZims.length) {
+        console.log('All items instantly complete. Navigating via fast-path...');
+        setAllComplete(true);
+        setTimeout(() => {
+          if (downloadStrategy === DOWNLOAD_STRATEGIES.LOCAL_FIRST && selectedDrive) {
+            navigate(ROUTES.TRANSFERRING);
+          } else {
+            navigate(ROUTES.COMPLETE);
+          }
+        }, 1000);
+      }
+
     } catch (error) {
       console.error('Failed to start downloads:', error);
       alert(`Failed to start downloads: ${error.message}`);
@@ -272,6 +394,15 @@ export default function DownloadProgressScreen() {
     }
   };
 
+  const handleOpenFolder = async () => {
+    try {
+      await window.electronAPI.invoke('download:open-folder');
+    } catch (error) {
+      console.error('Failed to open folder:', error);
+      alert('Failed to open folder');
+    }
+  };
+
   // Calculate overall stats
   const totalFiles = selectedZims.length + selectedReaders.length;
   const completedFiles = Object.values(downloadProgress).filter(p => p.status === 'completed').length;
@@ -304,6 +435,31 @@ export default function DownloadProgressScreen() {
             {downloadStrategy === DOWNLOAD_STRATEGIES.DIRECT_TO_USB && ' or unplug the USB drive'}
           </Typography>
         </Alert>
+
+        {/* Download location info for local downloads */}
+        {downloadLocation && downloadStrategy !== DOWNLOAD_STRATEGIES.DIRECT_TO_USB && (
+          <Paper variant="outlined" sx={{ p: 2, mb: 2, bgcolor: 'rgba(255, 255, 255, 0.02)' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2 }}>
+              <Box sx={{ flex: 1, minWidth: 0 }}>
+                <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.5 }}>
+                  Download Location
+                </Typography>
+                <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.85rem', wordBreak: 'break-all' }}>
+                  {downloadLocation}
+                </Typography>
+              </Box>
+              <Button
+                variant="outlined"
+                size="small"
+                startIcon={<FolderIcon />}
+                onClick={handleOpenFolder}
+                sx={{ flexShrink: 0 }}
+              >
+                Open Folder
+              </Button>
+            </Box>
+          </Paper>
+        )}
 
         {/* Individual downloads - grid for landscape */}
         <Paper variant="outlined" sx={{ p: 2, flex: 1, overflow: 'auto' }}>

@@ -18,7 +18,15 @@ export default function StorageBar({
   const selectedPercent = total > 0 ? (selected / total) * 100 : 0;
   const totalPercent = usedPercent + selectedPercent;
   const isOverCapacity = totalPercent > 100;
+  const isNearCapacity = totalPercent > 85 && totalPercent <= 100; // Warning at 85%
   const freeSpace = Math.max(0, total - used - selected);
+
+  // Determine color based on capacity
+  const getSelectedColor = () => {
+    if (isOverCapacity) return '#ff6b6b'; // Red
+    if (isNearCapacity) return '#fbbf24'; // Yellow/Orange warning
+    return '#51cf66'; // Green
+  };
 
   const tooltipContent = (
     <Box sx={{ p: 0.5 }}>
@@ -76,7 +84,7 @@ export default function StorageBar({
                   left: `${Math.min(usedPercent, 100)}%`,
                   width: `${Math.min(selectedPercent, 100 - Math.min(usedPercent, 100))}%`,
                   height: '100%',
-                  bgcolor: isOverCapacity ? '#ff6b6b' : '#51cf66',
+                  bgcolor: getSelectedColor(),
                   transition: 'width 0.3s ease-in-out, left 0.3s ease-in-out'
                 }}
               />
@@ -137,7 +145,7 @@ export default function StorageBar({
           }}
         />
 
-        {/* Selected space (green/red) */}
+        {/* Selected space (green/yellow/red) */}
         {selected > 0 && (
           <Box
             className={showFlashing ? 'storage-flash' : ''}
@@ -146,7 +154,7 @@ export default function StorageBar({
               left: `${Math.min(usedPercent, 100)}%`,
               width: `${Math.min(selectedPercent, 100 - Math.min(usedPercent, 100))}%`,
               height: '100%',
-              bgcolor: isOverCapacity ? '#ff6b6b' : '#51cf66',
+              bgcolor: getSelectedColor(),
               transition: 'width 0.3s ease-in-out, left 0.3s ease-in-out'
             }}
           />
@@ -217,6 +225,26 @@ export default function StorageBar({
             <WarningIcon fontSize="small" sx={{ color: '#ff6b6b' }} />
             <Typography variant="caption" sx={{ color: '#ff6b6b', fontWeight: 600 }}>
               Selected content exceeds available space by {formatBytes(used + selected - total)}
+            </Typography>
+          </Box>
+        </Box>
+      )}
+
+      {/* Near capacity warning */}
+      {!isOverCapacity && isNearCapacity && (
+        <Box
+          sx={{
+            mt: 1,
+            p: 1,
+            bgcolor: 'rgba(251, 191, 36, 0.15)',
+            borderRadius: 1,
+            border: '1px solid rgba(251, 191, 36, 0.3)'
+          }}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+            <WarningIcon fontSize="small" sx={{ color: '#fbbf24' }} />
+            <Typography variant="caption" sx={{ color: '#fbbf24', fontWeight: 600 }}>
+              Approaching capacity ({totalPercent.toFixed(0)}% used) - only {formatBytes(freeSpace)} remaining
             </Typography>
           </Box>
         </Box>

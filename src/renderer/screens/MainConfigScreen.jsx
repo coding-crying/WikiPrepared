@@ -159,9 +159,26 @@ export default function MainConfigScreen() {
   const filteredZims = getFilteredZims();
   const availableLanguages = getAvailableLanguages();
 
+  // Determine recommended ZIM based on drive capacity
+  // 128GB drive is usually ~119GiB. Full Wikipedia (maxi) is ~100-110GB.
+  // 64GB drive is usually ~59GiB. Nopic is ~45GB.
+  let recommendedScope = null;
+  if (totalCapacity > 100 * 1024 * 1024 * 1024) { // > 100GB
+    recommendedScope = 'maxi';
+  } else if (totalCapacity > 50 * 1024 * 1024 * 1024) { // > 50GB
+    recommendedScope = 'nopic';
+  }
+
   // Count items for tab badges
   const selectedContentCount = selectedZims.length;
   const selectedReadersCount = selectedReaders.length;
+
+  // Compute tooltip message for disabled Continue button
+  const continueTooltip = selectedZims.length === 0
+    ? "Please select at least one Wikipedia dump"
+    : !hasSpace
+      ? "Not enough space. Reduce selection or choose a larger drive"
+      : "";
 
   return (
     <AppLayout
@@ -244,6 +261,29 @@ export default function MainConfigScreen() {
                     </Box>
                   </AccordionSummary>
                   <AccordionDetails sx={{ pt: 0 }}>
+                    {updates.length > 0 && (
+                      <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Typography variant="caption" color="text.secondary">
+                          {updates.length} ZIM file{updates.length > 1 ? 's have' : ' has'} newer versions available
+                        </Typography>
+                        <Button
+                          variant="outlined"
+                          size="small"
+                          onClick={() => {
+                            // Select all ZIMs that have updates
+                            const updatedZims = installedZims.filter(zim => zim.hasUpdate);
+                            updatedZims.forEach(zim => {
+                              if (!selectedZims.some(z => z.filename === zim.filename)) {
+                                toggleZim(zim);
+                              }
+                            });
+                          }}
+                          sx={{ textTransform: 'none' }}
+                        >
+                          Select All Updates
+                        </Button>
+                      </Box>
+                    )}
                     <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 1 }}>
                       {installedZims.map((zim) => (
                         <ZimListItem
@@ -281,26 +321,32 @@ export default function MainConfigScreen() {
                     <Typography variant="subtitle2" fontWeight={600}>
                       Add New Content
                     </Typography>
-                    <FormControl
-                      size="small"
-                      sx={{ minWidth: 120 }}
-                      onClick={(e) => e.stopPropagation()}
+                    <Tooltip
+                      title={availableLanguages.length === 0 ? "Loading available languages..." : ""}
+                      arrow
+                      placement="top"
                     >
-                      <Select
-                        value={availableLanguages.includes(selectedLanguage) ? selectedLanguage : ''}
-                        onChange={(e) => { e.stopPropagation(); setLanguage(e.target.value); }}
-                        displayEmpty
-                        disabled={availableLanguages.length === 0}
-                        sx={{ height: 28, fontSize: '0.8rem' }}
+                      <FormControl
+                        size="small"
+                        sx={{ minWidth: 120 }}
+                        onClick={(e) => e.stopPropagation()}
                       >
-                        <MenuItem value="" disabled>Language</MenuItem>
-                        {availableLanguages.map((lang) => (
-                          <MenuItem key={lang} value={lang}>
-                            {getLanguageName(lang)}
-                          </MenuItem>
-                        ))}
-                      </Select>
-                    </FormControl>
+                        <Select
+                          value={availableLanguages.includes(selectedLanguage) ? selectedLanguage : ''}
+                          onChange={(e) => { e.stopPropagation(); setLanguage(e.target.value); }}
+                          displayEmpty
+                          disabled={availableLanguages.length === 0}
+                          sx={{ height: 28, fontSize: '0.8rem' }}
+                        >
+                          <MenuItem value="" disabled>Language</MenuItem>
+                          {availableLanguages.map((lang) => (
+                            <MenuItem key={lang} value={lang}>
+                              {getLanguageName(lang)}
+                            </MenuItem>
+                          ))}
+                        </Select>
+                      </FormControl>
+                    </Tooltip>
                   </Box>
                 </AccordionSummary>
                 <AccordionDetails sx={{ pt: 0, flex: 1, overflow: 'auto', minHeight: 100 }}>
@@ -313,15 +359,20 @@ export default function MainConfigScreen() {
                       No Wikipedia dumps available for this language
                     </Typography>
                   ) : (
-                    <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 1 }}>
-                      {filteredZims.map((zim) => (
-                        <ZimListItem
-                          key={zim.filename}
-                          zim={zim}
-                          isSelected={selectedZims.some(z => z.filename === zim.filename)}
-                          onToggle={() => toggleZim(zim)}
-                        />
-                      ))}
+                    <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gridAutoFlow: 'dense', gap: 1 }}>
+                      {filteredZims.map((zim) => {
+                        const isRecommended = zim.scope === recommendedScope && zim.topic === 'all';
+                        return (
+                          <ZimListItem
+                            key={zim.filename}
+                            zim={zim}
+                            isSelected={selectedZims.some(z => z.filename === zim.filename)}
+                            onToggle={() => toggleZim(zim)}
+                            isRecommended={isRecommended}
+                            sx={isRecommended ? { gridColumn: { sm: 'span 2' } } : {}}
+                          />
+                        );
+                      })}
                     </Box>
                   )}
                 </AccordionDetails>
@@ -395,6 +446,7 @@ export default function MainConfigScreen() {
             onBack={handleBack}
             onNext={handleContinue}
             nextDisabled={selectedZims.length === 0 || !hasSpace}
+            nextDisabledTooltip={continueTooltip}
             centerContent={
               selectedDrive ? (
                 <StorageBar

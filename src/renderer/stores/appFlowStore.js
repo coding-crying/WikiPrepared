@@ -2,14 +2,12 @@ import { create } from 'zustand';
 import { devtools, persist } from 'zustand/middleware';
 
 // Helper function to calculate reader sizes
+// Using a safe upper bound (250MB) to prevent out-of-space errors
+// as actual binary sizes vary and are often larger than historical averages
+const SAFE_READER_SIZE = 250 * 1024 * 1024;
+
 function calculateReaderSize(platforms) {
-  const sizes = {
-    windows: 80 * 1024 * 1024,    // 80MB
-    linux: 90 * 1024 * 1024,       // 90MB
-    macos: 100 * 1024 * 1024,      // 100MB
-    android: 45 * 1024 * 1024      // 45MB
-  };
-  return platforms.reduce((acc, platform) => acc + (sizes[platform] || 0), 0);
+  return platforms.length * SAFE_READER_SIZE;
 }
 
 export const useAppFlowStore = create(
@@ -49,13 +47,22 @@ export const useAppFlowStore = create(
 
         getAvailableSpace: () => {
           const state = get();
-          return state.selectedDrive ? state.selectedDrive.size : 0;
+          // Return usable space (approx 95% of raw bytes to account for filesystem overhead)
+          return state.selectedDrive ? Math.floor(state.selectedDrive.size * 0.95) : 0;
         },
 
         hasEnoughSpace: () => {
           const state = get();
           if (!state.selectedDrive) return true; // Local download
-          return state.getTotalSize() <= state.selectedDrive.size;
+          
+          const totalSize = state.getTotalSize();
+          const availableSpace = state.selectedDrive.freeSpace || state.selectedDrive.size;
+          
+          // Apply a 5% safety margin to the available space
+          // This prevents 99% full failures due to block size alignment/overhead
+          const safeAvailableSpace = Math.floor(availableSpace * 0.95);
+          
+          return totalSize <= safeAvailableSpace;
         },
 
         // Actions

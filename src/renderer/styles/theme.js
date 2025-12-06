@@ -45,6 +45,18 @@ const theme = createTheme({
     },
     divider: 'rgba(255, 255, 255, 0.12)'
   },
+  shadows: [
+    'none',
+    '0 1px 3px rgba(0,0,0,0.12), 0 8px 24px rgba(0,0,0,0.15)',
+    '0 2px 6px rgba(0,0,0,0.15), 0 12px 32px rgba(0,0,0,0.2)',
+    '0 4px 12px rgba(0,0,0,0.18), 0 16px 48px rgba(0,0,0,0.25)',
+    '0 6px 18px rgba(0,0,0,0.2), 0 20px 56px rgba(0,0,0,0.3)',
+    '0 8px 24px rgba(0,0,0,0.22), 0 24px 64px rgba(0,0,0,0.35)',
+    '0 12px 32px rgba(0,0,0,0.25), 0 32px 72px rgba(0,0,0,0.4)',
+    '0 16px 40px rgba(0,0,0,0.28), 0 40px 80px rgba(0,0,0,0.45)',
+    '0 20px 48px rgba(0,0,0,0.3), 0 48px 96px rgba(0,0,0,0.5)',
+    ...Array(16).fill('none') // Fill rest with none
+  ],
   typography: {
     fontFamily: [
       '-apple-system',
@@ -124,10 +136,12 @@ const theme = createTheme({
           }
         },
         containedPrimary: {
-          backgroundColor: '#ffffff',
+          background: 'linear-gradient(135deg, #ffffff 0%, #f5f5f5 100%)',
           color: '#1a1a1a',
+          boxShadow: '0 2px 8px rgba(255,255,255,0.15)',
           '&:hover': {
-            backgroundColor: '#e0e0e0'
+            background: 'linear-gradient(135deg, #f5f5f5 0%, #e8e8e8 100%)',
+            boxShadow: '0 4px 12px rgba(255,255,255,0.2)'
           }
         },
         outlined: {
@@ -146,10 +160,16 @@ const theme = createTheme({
       styleOverrides: {
         root: {
           borderRadius: 12,
-          backgroundColor: '#2d2d2d',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
-          border: '1px solid rgba(255, 255, 255, 0.08)',
-          transition: 'all 0.2s ease-in-out'
+          background: 'linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 100%)',
+          backgroundColor: 'rgba(26, 26, 26, 0.8)',
+          backdropFilter: 'blur(10px)',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.12), 0 8px 24px rgba(0,0,0,0.2)',
+          border: '1px solid rgba(255, 255, 255, 0.12)',
+          transition: 'all 0.2s ease-in-out',
+          '&:hover': {
+            boxShadow: '0 4px 12px rgba(0,0,0,0.15), 0 12px 32px rgba(0,0,0,0.25)',
+            borderColor: 'rgba(255, 255, 255, 0.18)'
+          }
         }
       }
     },
@@ -157,16 +177,22 @@ const theme = createTheme({
       styleOverrides: {
         root: {
           borderRadius: 12,
-          backgroundImage: 'none'
+          backgroundImage: 'none',
+          background: 'linear-gradient(135deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.01) 100%)',
+          backdropFilter: 'blur(8px)'
+        },
+        elevation0: {
+          boxShadow: 'none',
+          border: '1px solid rgba(255, 255, 255, 0.1)'
         },
         elevation1: {
-          boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+          boxShadow: '0 1px 3px rgba(0,0,0,0.12), 0 8px 24px rgba(0,0,0,0.15)'
         },
         elevation2: {
-          boxShadow: '0 4px 8px rgba(0,0,0,0.3)'
+          boxShadow: '0 2px 6px rgba(0,0,0,0.15), 0 12px 32px rgba(0,0,0,0.2)'
         },
         elevation3: {
-          boxShadow: '0 6px 12px rgba(0,0,0,0.4)'
+          boxShadow: '0 4px 12px rgba(0,0,0,0.18), 0 16px 48px rgba(0,0,0,0.25)'
         }
       }
     },

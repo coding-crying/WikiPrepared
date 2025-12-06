@@ -20,6 +20,7 @@ const IPC_CHANNELS = {
   DRIVES_LIST: 'drives:list',
   DRIVES_INFO: 'drives:info',
   DRIVES_SCAN: 'drives:scan',
+  DRIVES_FORMAT: 'drives:format',
   DRIVES_EJECT: 'drives:eject',
   DRIVES_WATCH_START: 'drives:watch:start',
   DRIVES_WATCH_STOP: 'drives:watch:stop',
@@ -33,6 +34,7 @@ const IPC_CHANNELS = {
   DOWNLOAD_GET_LOCAL_DISK_INFO: 'download:get-local-disk-info',
   DOWNLOAD_SET_LOCATION: 'download:set-location',
   DOWNLOAD_GET_LOCATION: 'download:get-location',
+  DOWNLOAD_OPEN_FOLDER: 'download:open-folder',
   DOWNLOAD_ADD: 'download:add',
   DOWNLOAD_START: 'download:start',
   DOWNLOAD_START_ALL: 'download:start-all',
@@ -66,6 +68,11 @@ const IPC_CHANNELS = {
   FILE_DELETE: 'file:delete',
   FILE_GET_SIZE: 'file:get-size',
   FILE_OPERATION_PROGRESS: 'file:operation-progress',
+  // Transfer from Local to USB
+  TRANSFER_START: 'transfer:start',
+  TRANSFER_PROGRESS: 'transfer:progress',
+  TRANSFER_COMPLETED: 'transfer:completed',
+  TRANSFER_ERROR: 'transfer:error',
   // Settings
   SETTINGS_GET: 'settings:get',
   SETTINGS_SET: 'settings:set',
@@ -84,6 +91,9 @@ const MAIN_TO_RENDERER_CHANNELS = [
   IPC_CHANNELS.DOWNLOAD_COMPLETED,
   IPC_CHANNELS.DOWNLOAD_ERROR,
   IPC_CHANNELS.FILE_OPERATION_PROGRESS,
+  IPC_CHANNELS.TRANSFER_PROGRESS,
+  IPC_CHANNELS.TRANSFER_COMPLETED,
+  IPC_CHANNELS.TRANSFER_ERROR,
 ];
 
 console.log('Preload: ✓ IPC channels defined');

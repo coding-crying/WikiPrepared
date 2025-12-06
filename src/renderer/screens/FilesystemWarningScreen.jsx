@@ -6,10 +6,13 @@ import {
   TextField,
   Button,
   Alert,
-  Paper
+  Paper,
+  Tooltip,
+  InputAdornment
 } from '@mui/material';
-import { Warning as WarningIcon } from '@mui/icons-material';
+import { Warning as WarningIcon, CheckCircle as CheckIcon } from '@mui/icons-material';
 import { useAppFlowStore } from '../stores/appFlowStore';
+import { useToastStore } from '../stores/toastStore';
 import AppLayout from '../components/layout/AppLayout';
 import NavigationButtons from '../components/layout/NavigationButtons';
 import { ROUTES, FILESYSTEMS } from '../utils/constants';
@@ -22,6 +25,7 @@ import { formatGB } from '../utils/formatters';
 export default function FilesystemWarningScreen() {
   const navigate = useNavigate();
   const selectedDrive = useAppFlowStore(state => state.selectedDrive);
+  const { showToast } = useToastStore();
   const [confirmText, setConfirmText] = useState('');
   const [isFormatting, setIsFormatting] = useState(false);
 
@@ -38,11 +42,12 @@ export default function FilesystemWarningScreen() {
         filesystem: FILESYSTEMS.EXFAT
       });
 
+      showToast('Drive formatted successfully to exFAT', 'success');
       // After successful format, proceed
       navigate(ROUTES.CONFIGURE);
     } catch (error) {
       console.error('Format failed:', error);
-      alert(`Format failed: ${error.message}`);
+      showToast(`Format failed: ${error.message}`, 'error');
     } finally {
       setIsFormatting(false);
     }
@@ -64,24 +69,23 @@ export default function FilesystemWarningScreen() {
   const isFAT32 = selectedDrive.filesystem === FILESYSTEMS.FAT32;
 
   return (
-    <AppLayout title="Filesystem Compatibility Warning" currentStep={1}>
+    <AppLayout title="Prepare USB Stick" currentStep={1}>
       <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
         <Box sx={{ flex: 1, overflow: 'auto', mb: 2 }}>
           <Alert severity="warning" sx={{ mb: 3 }}>
-          <Typography variant="body1" gutterBottom>
-            The selected drive uses <strong>{selectedDrive.filesystem}</strong>,
-            which {isFAT32 ? 'cannot store files larger than 4GB' : 'may not support large files'}.
+          <Typography variant="body1" gutterBottom fontWeight={700}>
+            We need to prepare this USB stick for Wikipedia.
           </Typography>
           <Typography variant="body2">
-            Most Wikipedia ZIM files are larger than this limit and will not work on this drive.
+            The current format ({selectedDrive.filesystem}) cannot handle the large Wikipedia files.
           </Typography>
         </Alert>
 
         <Typography variant="h6" gutterBottom>
-          Recommendation: Format to exFAT
+          Recommended Action: Erase & Prepare
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-          exFAT supports large files and works on Windows, Mac, and Linux.
+          This ensures the stick works perfectly on Windows, Mac, and Linux.
         </Typography>
 
         {/* Format option */}
@@ -90,25 +94,20 @@ export default function FilesystemWarningScreen() {
           sx={{
             p: 3,
             mb: 3,
-            borderColor: 'rgba(239, 68, 68, 0.5)',
-            bgcolor: 'rgba(239, 68, 68, 0.1)',
+            borderColor: '#ef4444',
+            bgcolor: 'rgba(239, 68, 68, 0.05)',
             borderWidth: 2
           }}
         >
           <Box sx={{ display: 'flex', alignItems: 'flex-start', mb: 2 }}>
-            <WarningIcon sx={{ color: '#ef4444', mr: 1, mt: 0.5 }} />
+            <WarningIcon sx={{ color: '#ef4444', mr: 1, mt: 0.5, fontSize: 32 }} />
             <Box>
-              <Typography variant="subtitle1" fontWeight={700} sx={{ color: '#fca5a5' }}>
-                WARNING: Formatting will erase ALL data on this drive!
+              <Typography variant="h6" fontWeight={700} sx={{ color: '#d32f2f' }}>
+                DANGER: ALL FILES WILL BE DELETED
               </Typography>
-              <Typography variant="body2" sx={{ color: '#fca5a5', mt: 1 }}>
-                Drive: {selectedDrive.label || selectedDrive.device} - {formatGB(selectedDrive.size)}
+              <Typography variant="body1" sx={{ color: '#d32f2f', mt: 1 }}>
+                Every picture, document, and file on "{selectedDrive.label || 'USB Drive'}" will be permanently erased.
               </Typography>
-              {selectedDrive.mountpoints && selectedDrive.mountpoints.length > 0 && (
-                <Typography variant="body2" sx={{ color: '#fca5a5' }}>
-                  Location: {selectedDrive.mountpoints[0].path}
-                </Typography>
-              )}
             </Box>
           </Box>
 
@@ -118,8 +117,30 @@ export default function FilesystemWarningScreen() {
             onChange={(e) => setConfirmText(e.target.value.toUpperCase())}
             placeholder="Type FORMAT to confirm"
             error={confirmText && confirmText !== 'FORMAT'}
-            helperText="Type FORMAT (all caps) to enable formatting"
-            sx={{ mb: 2, bgcolor: 'background.paper' }}
+            helperText={
+              canFormat
+                ? "✓ Correct! Click the button below to erase everything."
+                : "Type FORMAT (all caps) to confirm you want to erase this drive."
+            }
+            InputProps={{
+              endAdornment: canFormat && (
+                <InputAdornment position="end">
+                  <CheckIcon sx={{ color: 'success.main' }} />
+                </InputAdornment>
+              )
+            }}
+            sx={{
+              mb: 2,
+              bgcolor: 'background.paper',
+              '& .MuiOutlinedInput-root': {
+                '&.Mui-focused fieldset': {
+                  borderColor: canFormat ? 'success.main' : undefined
+                }
+              },
+              '& .MuiFormHelperText-root': {
+                color: canFormat ? 'success.main' : undefined
+              }
+            }}
           />
 
           <Box sx={{ display: 'flex', gap: 2 }}>
@@ -128,31 +149,48 @@ export default function FilesystemWarningScreen() {
               onClick={() => {
                 setConfirmText('');
               }}
+              color="inherit"
             >
               Cancel
             </Button>
-            <Button
-              variant="contained"
-              color="error"
-              onClick={handleFormat}
-              disabled={!canFormat || isFormatting}
+            <Tooltip
+              title={
+                isFormatting
+                  ? "Erasing and preparing drive..."
+                  : !canFormat
+                    ? 'Type FORMAT above to enable this button'
+                    : ""
+              }
+              arrow
+              placement="top"
             >
-              {isFormatting ? 'Formatting...' : 'Format to exFAT'}
-            </Button>
+              <span>
+                <Button
+                  variant="contained"
+                  color="error"
+                  onClick={handleFormat}
+                  disabled={!canFormat || isFormatting}
+                  size="large"
+                >
+                  {isFormatting ? 'Erasing...' : 'Erase Everything & Prepare Drive'}
+                </Button>
+              </span>
+            </Tooltip>
           </Box>
         </Paper>
 
           {/* Alternative options */}
-          <Box sx={{ pt: 3 }}>
+          <Box sx={{ pt: 2, borderTop: '1px solid', borderColor: 'divider' }}>
             <Typography variant="body2" color="text.secondary" gutterBottom>
-              Or:
+              Other options:
             </Typography>
             <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
               <Button
                 variant="outlined"
                 onClick={handleContinueAnyway}
+                color="warning"
               >
-                Continue with {selectedDrive.filesystem} anyway
+                Try without erasing (Not Recommended)
               </Button>
               <Button
                 variant="outlined"

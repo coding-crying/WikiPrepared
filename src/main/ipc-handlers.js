@@ -1,4 +1,5 @@
-const { ipcMain, app } = require('electron');
+const { ipcMain, app, shell } = require('electron');
+const path = require('path');
 const { IPC_CHANNELS } = require('../shared/ipc-channels');
 const DriveManager = require('./managers/DriveManager');
 const ZimManager = require('./managers/ZimManager');
@@ -48,6 +49,15 @@ function setupIpcHandlers() {
       return await driveManager.scanZimFiles(drivePath);
     } catch (error) {
       console.error('Error scanning drive:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.DRIVES_FORMAT, async (event, { device, filesystem }) => {
+    try {
+      return await driveManager.formatDrive(device, filesystem);
+    } catch (error) {
+      console.error('Error formatting drive:', error);
       throw error;
     }
   });
@@ -265,6 +275,170 @@ function setupIpcHandlers() {
       return await downloadManager.cancelAllDownloads();
     } catch (error) {
       console.error('Error cancelling all downloads:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.DOWNLOAD_OPEN_FOLDER, async () => {
+    try {
+      const downloadDir = downloadManager.getDownloadDir();
+      const fs = require('fs-extra');
+
+      // Ensure directory exists
+      await fs.ensureDir(downloadDir);
+
+      // shell.openPath returns a string with error message on failure, empty string on success
+      const result = await shell.openPath(downloadDir);
+      if (result) {
+        throw new Error(`Failed to open folder: ${result}`);
+      }
+
+      return { success: true, path: downloadDir };
+    } catch (error) {
+      console.error('Error opening download folder:', error);
+      throw error;
+    }
+  });
+
+  // ========================================
+  // Transfer Handlers (Local to USB)
+  // ========================================
+
+  ipcMain.handle(IPC_CHANNELS.TRANSFER_START, async (event, { destination, filesToTransfer }) => {
+    try {
+      const fs = require('fs-extra');
+      const downloadDir = downloadManager.getDownloadDir();
+
+      console.log('Starting transfer from:', downloadDir);
+      console.log('Transfer destination:', destination);
+
+      // Get all files in download directory
+      const files = await fs.readdir(downloadDir);
+      let zimFiles = files.filter(f => f.endsWith('.zim'));
+
+      // If specific files were requested, filter the list
+      if (filesToTransfer && Array.isArray(filesToTransfer) && filesToTransfer.length > 0) {
+        console.log('Filtering transfer to selected files:', filesToTransfer);
+        zimFiles = zimFiles.filter(f => filesToTransfer.includes(f));
+      }
+
+      if (zimFiles.length === 0) {
+        throw new Error('No matching ZIM files found to transfer');
+      }
+
+      console.log('Found ZIM files to transfer:', zimFiles);
+
+      // Calculate total size
+      let totalSize = 0;
+      const fileInfos = [];
+      for (const file of zimFiles) {
+        const sourcePath = path.join(downloadDir, file);
+        const stats = await fs.stat(sourcePath);
+        fileInfos.push({
+          name: file,
+          sourcePath,
+          destinationPath: path.join(destination, file),
+          size: stats.size
+        });
+        totalSize += stats.size;
+      }
+
+      console.log(`Total transfer size: ${totalSize} bytes`);
+
+      let transferredSize = 0;
+      const windows = require('electron').BrowserWindow.getAllWindows();
+
+      // Copy each file
+      for (const fileInfo of fileInfos) {
+        console.log(`Transferring: ${fileInfo.name}`);
+
+        // Send initial progress for this file
+        windows.forEach((window) => {
+          window.webContents.send(IPC_CHANNELS.TRANSFER_PROGRESS, {
+            currentFile: fileInfo.name,
+            progress: (transferredSize / totalSize) * 100,
+            transferredSize,
+            totalSize,
+            speed: 0
+          });
+        });
+
+        try {
+          // Check if file already exists
+          const destExists = await fs.pathExists(fileInfo.destinationPath);
+          if (destExists) {
+            console.log(`File already exists at destination, skipping: ${fileInfo.name}`);
+            transferredSize += fileInfo.size;
+            continue;
+          }
+
+          // Copy file with progress tracking
+          await new Promise((resolve, reject) => {
+            const readStream = fs.createReadStream(fileInfo.sourcePath);
+            const writeStream = fs.createWriteStream(fileInfo.destinationPath);
+
+            let copiedBytes = 0;
+            const startTime = Date.now();
+
+            readStream.on('data', (chunk) => {
+              copiedBytes += chunk.length;
+              transferredSize += chunk.length;
+
+              const elapsed = (Date.now() - startTime) / 1000; // seconds
+              const speed = elapsed > 0 ? copiedBytes / elapsed : 0;
+
+              // Send progress update
+              windows.forEach((window) => {
+                window.webContents.send(IPC_CHANNELS.TRANSFER_PROGRESS, {
+                  currentFile: fileInfo.name,
+                  progress: (transferredSize / totalSize) * 100,
+                  transferredSize,
+                  totalSize,
+                  speed
+                });
+              });
+            });
+
+            readStream.on('error', reject);
+            writeStream.on('error', reject);
+            writeStream.on('finish', resolve);
+
+            readStream.pipe(writeStream);
+          });
+
+          console.log(`Successfully transferred: ${fileInfo.name}`);
+        } catch (error) {
+          console.error(`Error transferring ${fileInfo.name}:`, error);
+          // Send error event
+          windows.forEach((window) => {
+            window.webContents.send(IPC_CHANNELS.TRANSFER_ERROR, {
+              message: error.message,
+              filename: fileInfo.name
+            });
+          });
+          throw error;
+        }
+      }
+
+      console.log('Transfer completed successfully');
+
+      // Send completion event
+      windows.forEach((window) => {
+        window.webContents.send(IPC_CHANNELS.TRANSFER_COMPLETED, {
+          filesTransferred: fileInfos.length,
+          totalSize
+        });
+      });
+
+      return { success: true, filesTransferred: fileInfos.length };
+    } catch (error) {
+      console.error('Transfer failed:', error);
+      const windows = require('electron').BrowserWindow.getAllWindows();
+      windows.forEach((window) => {
+        window.webContents.send(IPC_CHANNELS.TRANSFER_ERROR, {
+          message: error.message
+        });
+      });
       throw error;
     }
   });

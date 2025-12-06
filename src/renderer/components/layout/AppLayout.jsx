@@ -1,6 +1,7 @@
 import React from 'react';
 import { Box, Container, Typography, Paper } from '@mui/material';
 import StepIndicator from '../common/StepIndicator';
+import ToastContainer from '../common/ToastContainer';
 import '../../styles/animations.css';
 
 // Import logo
@@ -114,6 +115,9 @@ export default function AppLayout({
           {children}
         </Paper>
       </Container>
+
+      {/* Global toast notifications */}
+      <ToastContainer />
     </Box>
   );
 }

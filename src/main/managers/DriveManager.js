@@ -85,6 +85,21 @@ class DriveManager {
         const { execSync } = require('child_process');
         const os = require('os');
 
+        // Try to get label using lsblk if missing (Linux only)
+        if ((!mountpoint.label || mountpoint.label === 'Unnamed Drive') && os.platform() === 'linux') {
+           try {
+             // lsblk -n -o LABEL /run/media/user/drive
+             // Use mountpoint.path
+             const label = execSync(`lsblk -n -o LABEL "${mountpoint.path}"`, { encoding: 'utf8' }).trim();
+             if (label) {
+               mountpoint.label = label;
+               drive.description = label; // Also update description
+             }
+           } catch (e) {
+             // Ignore error
+           }
+        }
+
         if (os.platform() === 'win32') {
           // Windows: use wmic
           const driveLetter = mountpoint.path.charAt(0).toUpperCase();
@@ -290,7 +305,7 @@ class DriveManager {
     try {
       const drives = await drivelist.list();
       const drive = drives.find((d) => {
-        return d.mountpoints.some((mp) => mp.path === drivePath);
+        return d.device === drivePath || d.mountpoints.some((mp) => mp.path === drivePath);
       });
 
       if (!drive) {
@@ -414,11 +429,196 @@ class DriveManager {
   }
 
   /**
+   * Format a drive
+   * @param {string} drivePath - Path to the drive/device
+   * @param {string} filesystem - Target filesystem (exfat, ntfs, etc.)
+   * @returns {Promise<Object>} Result
+   */
+  async formatDrive(drivePath, filesystem = 'exfat') {
+    const os = require('os');
+    const { exec } = require('child_process');
+    const util = require('util');
+    const execAsync = util.promisify(exec);
+    const platform = os.platform();
+
+    console.log(`Formatting ${drivePath} to ${filesystem}...`);
+
+    // Capture callback before stopping
+    const savedCallback = this.watchCallback;
+
+    // 1. CRITICAL SAFETY CHECK
+    // Ensure we are never wiping a system drive, even if UI allowed it
+    const validation = await this.validateDrive(drivePath);
+    if (!validation.valid) {
+      throw new Error(`Safety Block: Cannot format this drive. ${validation.message}`);
+    }
+    console.log('Safety check passed: Target is a removable/USB drive.');
+
+    // Stop watching to prevent interference
+    this.stopWatching();
+
+    try {
+      if (platform === 'linux') {
+        // Linux implementation: Wipe, Repartition, and Format
+        
+        // 1. Identify the parent disk device
+        let diskDevice = drivePath;
+        try {
+          // Check if input is a partition (has a parent)
+          const { stdout } = await execAsync(`lsblk -no pkname ${drivePath}`);
+          // Handle potential multiline output by taking only the first line
+          const parent = stdout.trim().split('\n')[0].trim();
+          if (parent) {
+            diskDevice = `/dev/${parent}`;
+          }
+        } catch (e) {
+          console.log('Could not resolve parent device, assuming input is disk root');
+        }
+        
+        // Ensure no newlines or spaces in device path
+        diskDevice = diskDevice.trim();
+        console.log(`Targeting whole disk for repartitioning: ${diskDevice}`);
+
+        // 2. Unmount ALL partitions on this disk
+        try {
+          // List all partitions: lsblk -n -o NAME -r /dev/sda
+          const { stdout } = await execAsync(`lsblk -n -o NAME -r ${diskDevice}`);
+          const devices = stdout.trim().split('\n');
+          // Filter out the disk itself
+          const partitions = devices.filter(d => `/dev/${d}` !== diskDevice && d !== path.basename(diskDevice));
+          
+          console.log('Unmounting partitions:', partitions);
+          
+          for (const partition of partitions) {
+             const partPath = `/dev/${partition}`;
+             try {
+               await execAsync(`udisksctl unmount -b ${partPath}`);
+               console.log(`Unmounted ${partPath}`);
+             } catch (e) {
+               // Ignore errors (already unmounted, etc)
+             }
+          }
+        } catch (e) {
+          console.warn('Error listing/unmounting partitions:', e.message);
+        }
+
+        // 3. Wipe and Repartition (requires root)
+        // We chain these commands to avoid multiple password prompts
+        console.log('Wiping and creating new partition table...');
+        try {
+          const commands = [
+            `wipefs -a ${diskDevice}`,            // Wipe signatures
+            `parted -s ${diskDevice} mklabel msdos`, // New MBR table
+            `parted -s ${diskDevice} mkpart primary 0% 100%` // New primary partition filling disk
+          ].join(' && ');
+          
+          await execAsync(`pkexec sh -c "${commands}"`);
+        } catch (err) {
+           throw new Error(`Failed to repartition drive: ${err.message}`);
+        }
+        
+        // 4. Wait for OS to recognize new partition table
+        console.log('Waiting for kernel to sync...');
+        await new Promise(r => setTimeout(r, 2000));
+        
+        // 5. Find the new partition to format
+        let targetPartition = null;
+        try {
+           const { stdout } = await execAsync(`lsblk -n -o NAME -r ${diskDevice}`);
+           const devices = stdout.trim().split('\n');
+           const partitions = devices.filter(d => `/dev/${d}` !== diskDevice && d !== path.basename(diskDevice));
+           
+           if (partitions.length > 0) {
+             // Usually the first one is p1 or 1
+             targetPartition = `/dev/${partitions[0]}`;
+             console.log(`Detected new partition: ${targetPartition}`);
+           }
+        } catch (e) {
+           console.warn('Failed to detect new partition:', e);
+        }
+        
+        if (!targetPartition) {
+           // Fallback guess
+           targetPartition = `${diskDevice}1`;
+           if (diskDevice.includes('nvme')) targetPartition = `${diskDevice}p1`;
+           console.log(`Guessing new partition: ${targetPartition}`);
+        }
+
+        // 6. Format the new partition
+        const label = 'WIKIPREP';
+        console.log(`Formatting ${targetPartition} to ${filesystem}...`);
+        
+        try {
+           // Try mkfs.exfat directly with pkexec
+           await execAsync(`pkexec mkfs.exfat -n ${label} ${targetPartition}`);
+        } catch (err) {
+           throw new Error(`Failed to format new partition: ${err.message}`);
+        }
+        
+        // 7. Wait for auto-mount
+        console.log('Format complete, waiting for system refresh...');
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        
+        return { success: true, message: `Drive repartitioned and formatted to ${filesystem} successfully.` };
+
+      } else if (platform === 'darwin') {
+        // macOS: diskutil eraseDisk ExFAT WikiPrepared /dev/disk2
+        // Note: eraseDisk formats the whole disk and creates a new map. 
+        // If drivePath is a partition (disk2s1), use eraseVolume.
+        
+        const label = 'WikiPrepared';
+        const fsType = filesystem.toUpperCase() === 'EXFAT' ? 'ExFAT' : 'MS-DOS'; // MS-DOS is FAT32
+        
+        let cmd = '';
+        if (drivePath.match(/disk[0-9]+$/)) {
+           // Whole disk
+           cmd = `diskutil eraseDisk ${fsType} ${label} MBRFormat ${drivePath}`;
+        } else {
+           // Partition
+           cmd = `diskutil eraseVolume ${fsType} ${label} ${drivePath}`;
+        }
+        
+        console.log('Executing:', cmd);
+        await execAsync(cmd);
+        return { success: true, message: `Drive formatted to ${filesystem} successfully.` };
+
+      } else if (platform === 'win32') {
+        // Windows
+        // drivePath might be a device path from drivelist, but we need a drive letter for `format`.
+        // or we can use diskpart? diskpart is hard to script non-interactively without a script file.
+        
+        // Try to find drive letter from mountpoints? 
+        // The `drivePath` passed from UI `selectedDrive.device` is usually `\\.\PHYSICALDRIVE1` on Windows from drivelist.
+        // But we need the volume letter (E:).
+        
+        // This is tricky. If we can't find the letter, we can't easily use `format`.
+        // For now, return error on Windows prompting manual format.
+        
+        throw new Error('Automatic formatting on Windows is not yet supported. Please format the drive manually in File Explorer.');
+        
+      } else {
+        throw new Error(`Unsupported platform: ${platform}`);
+      }
+    } catch (error) {
+      console.error('Format error:', error);
+      throw new Error(`Failed to format drive: ${error.message}`);
+    } finally {
+      // Restart watching if it was active
+      if (savedCallback) {
+        this.startWatching(savedCallback);
+      }
+    }
+  }
+
+  /**
    * Safely eject a drive
    * @param {string} drivePath - Path to the drive (device path like /dev/sda or mount point)
    * @returns {Promise<Object>} Result
    */
   async ejectDrive(drivePath) {
+    // Stop watching drives to prevent race conditions/file locks during ejection
+    this.stopWatching();
+
     const os = require('os');
     const { exec } = require('child_process');
     const util = require('util');
@@ -456,8 +656,19 @@ class DriveManager {
               console.log(`Successfully unmounted ${partPath}`);
               unmountedAny = true;
             } catch (e) {
-              // Partition might not be mounted, that's ok
-              console.log(`Unmount ${partPath} result:`, e.message);
+              console.log(`Standard unmount failed for ${partPath}:`, e.message);
+              
+              // If busy, try lazy unmount (requires root)
+              if (e.message.includes('busy') || e.message.includes('target is busy')) {
+                 console.log(`Device busy, attempting lazy unmount for ${partPath}...`);
+                 try {
+                   await execAsync(`pkexec umount -l ${partPath}`);
+                   console.log(`Lazy unmount successful for ${partPath}`);
+                   unmountedAny = true;
+                 } catch (lazyErr) {
+                   console.error(`Lazy unmount failed: ${lazyErr.message}`);
+                 }
+              }
             }
           }
         } catch (lsblkError) {

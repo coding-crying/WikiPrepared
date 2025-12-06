@@ -1,10 +1,10 @@
 import React from 'react';
-import { Box, Button } from '@mui/material';
+import { Box, Button, Tooltip } from '@mui/material';
 import { ArrowBack, ArrowForward } from '@mui/icons-material';
 
 /**
  * Reusable navigation buttons for bottom of screens
- * Supports optional center content (like a storage bar)
+ * Supports optional center content (like a storage bar) and tooltips for disabled states
  */
 export default function NavigationButtons({
   onBack,
@@ -13,6 +13,8 @@ export default function NavigationButtons({
   nextLabel = 'Continue',
   backDisabled = false,
   nextDisabled = false,
+  backDisabledTooltip = '',
+  nextDisabledTooltip = '',
   showBack = true,
   showNext = true,
   nextVariant = 'contained',
@@ -32,15 +34,23 @@ export default function NavigationButtons({
       }}
     >
       {showBack ? (
-        <Button
-          variant="outlined"
-          startIcon={<ArrowBack />}
-          onClick={onBack}
-          disabled={backDisabled}
-          sx={{ flexShrink: 0 }}
+        <Tooltip
+          title={backDisabled && backDisabledTooltip ? backDisabledTooltip : ''}
+          arrow
+          placement="top"
         >
-          {backLabel}
-        </Button>
+          <span> {/* Wrapper needed for tooltip on disabled button */}
+            <Button
+              variant="outlined"
+              startIcon={<ArrowBack />}
+              onClick={onBack}
+              disabled={backDisabled}
+              sx={{ flexShrink: 0 }}
+            >
+              {backLabel}
+            </Button>
+          </span>
+        </Tooltip>
       ) : (
         <Box sx={{ width: 100 }} /> /* Spacer */
       )}
@@ -49,16 +59,24 @@ export default function NavigationButtons({
       {centerContent}
 
       {showNext ? (
-        <Button
-          variant={nextVariant}
-          color={nextColor}
-          endIcon={<ArrowForward />}
-          onClick={onNext}
-          disabled={nextDisabled}
-          sx={{ flexShrink: 0 }}
+        <Tooltip
+          title={nextDisabled && nextDisabledTooltip ? nextDisabledTooltip : ''}
+          arrow
+          placement="top"
         >
-          {nextLabel}
-        </Button>
+          <span> {/* Wrapper needed for tooltip on disabled button */}
+            <Button
+              variant={nextVariant}
+              color={nextColor}
+              endIcon={<ArrowForward />}
+              onClick={onNext}
+              disabled={nextDisabled}
+              sx={{ flexShrink: 0 }}
+            >
+              {nextLabel}
+            </Button>
+          </span>
+        </Tooltip>
       ) : (
         <Box sx={{ width: 100 }} /> /* Spacer */
       )}
