@@ -238,15 +238,20 @@ export default function MainConfigScreen() {
                     bgcolor: 'background.paper',
                     '&:before': { display: 'none' },
                     border: '1px solid',
-                    borderColor: 'divider'
+                    borderColor: expandedAccordion === 'existing' ? 'text.secondary' : 'divider',
+                    mb: 1
                   }}
                 >
                   <AccordionSummary
                     expandIcon={<ExpandMoreIcon />}
-                    sx={{ minHeight: 48, '& .MuiAccordionSummary-content': { my: 1 } }}
+                    sx={{ 
+                      minHeight: 48, 
+                      '& .MuiAccordionSummary-content': { my: 1 },
+                      bgcolor: expandedAccordion === 'existing' ? 'action.hover' : 'transparent'
+                    }}
                   >
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flex: 1 }}>
-                      <Typography variant="subtitle2" fontWeight={600}>
+                      <Typography variant="subtitle2" fontWeight={600} color={expandedAccordion === 'existing' ? 'text.primary' : 'text.secondary'}>
                         Existing Content on Drive
                       </Typography>
                       <Chip label={installedZims.length} size="small" sx={{ height: 18, fontSize: '0.65rem' }} />
@@ -307,7 +312,7 @@ export default function MainConfigScreen() {
                   bgcolor: 'background.paper',
                   '&:before': { display: 'none' },
                   border: '1px solid',
-                  borderColor: 'divider',
+                  borderColor: expandedAccordion === 'addNew' ? 'primary.main' : 'divider',
                   flex: expandedAccordion === 'addNew' ? 1 : 'none',
                   display: 'flex',
                   flexDirection: 'column'
@@ -315,30 +320,34 @@ export default function MainConfigScreen() {
               >
                 <AccordionSummary
                   expandIcon={<ExpandMoreIcon />}
-                  sx={{ minHeight: 48, '& .MuiAccordionSummary-content': { my: 1 } }}
+                  sx={{ 
+                    minHeight: 48, 
+                    '& .MuiAccordionSummary-content': { my: 1 },
+                    bgcolor: expandedAccordion === 'addNew' ? 'rgba(25, 118, 210, 0.04)' : 'transparent'
+                  }}
                 >
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flex: 1 }}>
-                    <Typography variant="subtitle2" fontWeight={600}>
+                    <Typography variant="subtitle2" fontWeight={600} color={expandedAccordion === 'addNew' ? 'primary' : 'text.primary'}>
                       Add New Content
                     </Typography>
+                  </Box>
+                </AccordionSummary>
+                <AccordionDetails sx={{ pt: 2, flex: 1, overflow: 'auto', minHeight: 100 }}>
+                  {/* Language Selector */}
+                  <Box sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 2 }}>
                     <Tooltip
                       title={availableLanguages.length === 0 ? "Loading available languages..." : ""}
                       arrow
                       placement="top"
                     >
-                      <FormControl
-                        size="small"
-                        sx={{ minWidth: 120 }}
-                        onClick={(e) => e.stopPropagation()}
-                      >
+                      <FormControl size="small" sx={{ minWidth: 200 }}>
+                        <InputLabel>Language</InputLabel>
                         <Select
                           value={availableLanguages.includes(selectedLanguage) ? selectedLanguage : ''}
-                          onChange={(e) => { e.stopPropagation(); setLanguage(e.target.value); }}
-                          displayEmpty
+                          onChange={(e) => setLanguage(e.target.value)}
+                          label="Language"
                           disabled={availableLanguages.length === 0}
-                          sx={{ height: 28, fontSize: '0.8rem' }}
                         >
-                          <MenuItem value="" disabled>Language</MenuItem>
                           {availableLanguages.map((lang) => (
                             <MenuItem key={lang} value={lang}>
                               {getLanguageName(lang)}
@@ -347,9 +356,9 @@ export default function MainConfigScreen() {
                         </Select>
                       </FormControl>
                     </Tooltip>
+                    {availableLanguages.length === 0 && <CircularProgress size={20} />}
                   </Box>
-                </AccordionSummary>
-                <AccordionDetails sx={{ pt: 0, flex: 1, overflow: 'auto', minHeight: 100 }}>
+
                   {isLoading ? (
                     <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', py: 4 }}>
                       <CircularProgress size={32} />

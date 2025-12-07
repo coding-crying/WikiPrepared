@@ -46,6 +46,7 @@ const IPC_CHANNELS = {
   DOWNLOAD_CANCEL_ALL: 'download:cancel-all',
   DOWNLOAD_REMOVE: 'download:remove',
   DOWNLOAD_GET_ALL: 'download:get-all',
+  DOWNLOAD_CLEAR_CACHE: 'download:clear-cache',
   DOWNLOAD_PROGRESS: 'download:progress',
   DOWNLOAD_COMPLETED: 'download:completed',
   DOWNLOAD_ERROR: 'download:error',

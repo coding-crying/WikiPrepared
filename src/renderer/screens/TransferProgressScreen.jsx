@@ -36,6 +36,8 @@ export default function TransferProgressScreen() {
   const [transferSpeed, setTransferSpeed] = useState(0);
   const [transferredSize, setTransferredSize] = useState(0);
   const [totalTransferSize, setTotalTransferSize] = useState(0);
+  const [waitingForConfirmation, setWaitingForConfirmation] = useState(false);
+  const [isTransferring, setIsTransferring] = useState(false);
 
   useEffect(() => {
     checkForOldVersions();
@@ -70,20 +72,35 @@ export default function TransferProgressScreen() {
         )
       );
 
-      setOldVersionsToDelete(oldVersions);
-
-      // Start transfer
-      if (oldVersions.length > 0 && deleteOldVersions) {
-        await deleteOldFiles(oldVersions);
+      if (oldVersions.length > 0) {
+        setOldVersionsToDelete(oldVersions);
+        setWaitingForConfirmation(true);
+        // Wait for user to click "Start Transfer"
+      } else {
+        // No conflicts, start immediately
+        await startTransfer(mountpoint);
       }
 
-      await startTransfer(mountpoint);
     } catch (error) {
       console.error('Failed to check old versions:', error);
       // Attempt transfer anyway if possible
       const mp = currentDrive.mountpoints?.[0]?.path;
       if (mp) await startTransfer(mp);
     }
+  };
+
+  const handleConfirmTransfer = async () => {
+    setWaitingForConfirmation(false);
+    setIsTransferring(true);
+    
+    const mountpoint = selectedDrive?.mountpoints?.[0]?.path;
+    if (!mountpoint) return;
+
+    if (oldVersionsToDelete.length > 0 && deleteOldVersions) {
+      await deleteOldFiles(oldVersionsToDelete);
+    }
+    
+    await startTransfer(mountpoint);
   };
 
   const deleteOldFiles = async (files) => {
@@ -98,6 +115,7 @@ export default function TransferProgressScreen() {
 
   const startTransfer = async (mountpoint) => {
     try {
+      setIsTransferring(true);
       if (!mountpoint) {
         console.error('No mountpoint provided to startTransfer');
         return;
@@ -148,29 +166,35 @@ export default function TransferProgressScreen() {
 
   return (
     <AppLayout
-      title="Transferring to USB..."
-      subtitle="Please wait while we copy files to your USB drive"
+      title={waitingForConfirmation ? "Review Transfer" : "Transferring to USB..."}
+      subtitle={waitingForConfirmation ? "Please review actions before starting" : "Please wait while we copy files to your USB drive"}
       maxWidth="md"
     >
       <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-        {/* Old versions warning */}
-        {oldVersionsToDelete.length > 0 && (
-          <Paper variant="outlined" sx={{ p: 2, mb: 3, bgcolor: 'info.light' }}>
-            <Typography variant="subtitle2" gutterBottom>
-              Old Versions Detected
+        {/* Old versions confirmation */}
+        {waitingForConfirmation && oldVersionsToDelete.length > 0 ? (
+          <Paper variant="outlined" sx={{ p: 3, mb: 3, bgcolor: 'background.paper', border: '1px solid', borderColor: 'primary.main' }}>
+            <Typography variant="h6" gutterBottom>
+              Space Management
             </Typography>
-            <List dense>
+            <Alert severity="info" sx={{ mb: 2 }}>
+              We found older versions of the selected files on your USB drive.
+            </Alert>
+            
+            <Typography variant="subtitle2" gutterBottom sx={{ mt: 2 }}>
+              Files recommended for deletion:
+            </Typography>
+            <List dense sx={{ bgcolor: 'action.hover', borderRadius: 1, mb: 2 }}>
               {oldVersionsToDelete.map((zim) => (
                 <ListItem key={zim.filename}>
                   <ListItemText
                     primary={zim.filename}
-                    secondary={`${formatBytes(zim.size)} • ${zim.date}`}
-                    primaryTypographyProps={{ variant: 'body2' }}
-                    secondaryTypographyProps={{ variant: 'caption' }}
+                    secondary={`${formatBytes(zim.size)} • ${zim.date || 'Unknown Date'}`}
                   />
                 </ListItem>
               ))}
             </List>
+            
             <FormControlLabel
               control={
                 <Checkbox
@@ -178,51 +202,69 @@ export default function TransferProgressScreen() {
                   onChange={(e) => setDeleteOldVersions(e.target.checked)}
                 />
               }
-              label="Delete old versions to make room for new ones"
+              label="Delete these old versions to free up space (Recommended)"
+              sx={{ display: 'block', mb: 2 }}
             />
+            
+            <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 2, mt: 3 }}>
+              <Button 
+                variant="contained" 
+                size="large"
+                onClick={handleConfirmTransfer}
+                startIcon={<CheckIcon />}
+              >
+                Confirm & Start Transfer
+              </Button>
+            </Box>
           </Paper>
+        ) : (
+          /* Progress and Status */
+          <>
+            <Paper variant="outlined" sx={{ p: 3, mb: 3 }}>
+              <ProgressBar
+                progress={transferProgress}
+                downloadedSize={transferredSize}
+                totalSize={totalTransferSize}
+                speed={transferSpeed}
+                filename={currentFile}
+                animated={true}
+              />
+            </Paper>
+
+            {/* Warnings */}
+            <Alert severity="warning">
+              <Typography variant="body2" fontWeight={600} gutterBottom>
+                Important:
+              </Typography>
+              <Typography variant="body2">
+                • Do not remove the USB drive during transfer
+              </Typography>
+              <Typography variant="body2">
+                • Do not shut down your computer
+              </Typography>
+            </Alert>
+
+            {/* Status */}
+            <Paper variant="outlined" sx={{ p: 2, mt: 3, flex: 1 }}>
+              <Typography variant="subtitle2" gutterBottom>
+                Transfer Status
+              </Typography>
+              <Divider sx={{ mb: 2 }} />
+              {currentFile ? (
+                <Typography variant="body2" color="text.secondary">
+                  Copying: {currentFile}
+                </Typography>
+              ) : (
+                <Typography variant="body2" color="text.secondary">
+                  Preparing transfer...
+                </Typography>
+              )}
+              <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
+                {transferProgress.toFixed(1)}% complete
+              </Typography>
+            </Paper>
+          </>
         )}
-
-        {/* Progress */}
-        <Paper variant="outlined" sx={{ p: 3, mb: 3 }}>
-          <ProgressBar
-            progress={transferProgress}
-            downloadedSize={transferredSize}
-            totalSize={totalTransferSize}
-            speed={transferSpeed}
-            filename={currentFile}
-            animated={true}
-          />
-        </Paper>
-
-        {/* Warnings */}
-        <Alert severity="warning">
-          <Typography variant="body2" fontWeight={600} gutterBottom>
-            Important:
-          </Typography>
-          <Typography variant="body2">
-            • Do not remove the USB drive during transfer
-          </Typography>
-          <Typography variant="body2">
-            • Do not shut down your computer
-          </Typography>
-        </Alert>
-
-        {/* Status */}
-        <Paper variant="outlined" sx={{ p: 2, mt: 3, flex: 1 }}>
-          <Typography variant="subtitle2" gutterBottom>
-            Transfer Status
-          </Typography>
-          <Divider sx={{ mb: 2 }} />
-          {currentFile && (
-            <Typography variant="body2" color="text.secondary">
-              Copying: {currentFile}
-            </Typography>
-          )}
-          <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
-            {transferProgress.toFixed(1)}% complete
-          </Typography>
-        </Paper>
       </Box>
     </AppLayout>
   );

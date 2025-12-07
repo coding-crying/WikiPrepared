@@ -434,6 +434,32 @@ class DownloadManager {
   }
 
   /**
+   * Clear the entire download cache directory and reset internal state
+   * @returns {Promise<void>}
+   */
+  async clearDownloadCache() {
+    try {
+      const downloadDir = this.getDownloadDir();
+      console.log('Clearing download cache at:', downloadDir);
+      
+      // Cancel any active downloads first
+      await this.cancelAllDownloads();
+      
+      // Empty the directory
+      await fs.emptyDir(downloadDir);
+      
+      // Reset state
+      this.downloads.clear();
+      this.progressCallbacks.clear();
+      
+      console.log('Download cache cleared successfully');
+    } catch (error) {
+      console.error('Failed to clear download cache:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Serialize a download object for IPC (removes non-serializable properties)
    * @param {Object} download - Download object
    * @returns {Object} Serializable download object

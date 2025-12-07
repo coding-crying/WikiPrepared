@@ -12,13 +12,14 @@ import {
   Description as FileIcon,
   Apps as AppsIcon,
   Usb as UsbIcon,
-  FolderOpen as FolderIcon
+  FolderOpen as FolderIcon,
+  Delete as DeleteIcon
 } from '@mui/icons-material';
 import { useAppFlowStore } from '../stores/appFlowStore';
 import { useStorageCalculation } from '../hooks/useStorageCalculation';
 import { useToastStore } from '../stores/toastStore';
 import AppLayout from '../components/layout/AppLayout';
-import { ROUTES, PLATFORM_NAMES, getLanguageName, getScopeName } from '../utils/constants';
+import { ROUTES, PLATFORM_NAMES, getLanguageName, getScopeName, DOWNLOAD_STRATEGIES } from '../utils/constants';
 import { formatBytes } from '../utils/formatters';
 
 /**
@@ -31,11 +32,15 @@ export default function CompletionScreen() {
     selectedZims,
     selectedReaders,
     selectedDrive,
+    downloadStrategy,
     softReset
   } = useAppFlowStore();
 
   const { totalSize } = useStorageCalculation();
   const { showToast } = useToastStore();
+  
+  const [isCleaning, setIsCleaning] = React.useState(false);
+  const [isCleaned, setIsCleaned] = React.useState(false);
 
   const handleEjectUSB = async () => {
     if (!selectedDrive) return;
@@ -46,6 +51,22 @@ export default function CompletionScreen() {
     } catch (error) {
       console.error('Failed to eject drive:', error);
       showToast(`Failed to eject: ${error.message}`, 'error');
+    }
+  };
+
+  const handleCleanup = async () => {
+    if (!confirm('This will delete the downloaded Wikipedia files to free up space on your computer.\n\nAre you sure you want to proceed?')) return;
+    
+    setIsCleaning(true);
+    try {
+      await window.electronAPI.invoke('download:clear-cache');
+      showToast('Local files deleted successfully', 'success');
+      setIsCleaned(true);
+    } catch (error) {
+      console.error('Cleanup failed:', error);
+      showToast(`Failed to delete files: ${error.message}`, 'error');
+    } finally {
+      setIsCleaning(false);
     }
   };
 
@@ -237,6 +258,20 @@ export default function CompletionScreen() {
           >
             Create Another Stick
           </Button>
+          
+          {/* Cleanup option for local-first strategy */}
+          {downloadStrategy === DOWNLOAD_STRATEGIES.LOCAL_FIRST && (
+            <Button
+              variant="outlined"
+              color="error"
+              startIcon={<DeleteIcon />}
+              onClick={handleCleanup}
+              disabled={isCleaning || isCleaned}
+              size="large"
+            >
+              {isCleaning ? 'Deleting...' : isCleaned ? 'Files Deleted' : 'Delete Local Files'}
+            </Button>
+          )}
         </Box>
       </Box>
     </AppLayout>

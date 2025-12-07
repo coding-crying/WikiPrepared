@@ -213,6 +213,26 @@ function setupIpcHandlers() {
     }
   });
 
+  ipcMain.handle(IPC_CHANNELS.DOWNLOAD_REMOVE, async (event, downloadId) => {
+    try {
+      downloadManager.removeDownload(downloadId);
+      return { success: true };
+    } catch (error) {
+      console.error('Error removing download:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.DOWNLOAD_CLEAR_CACHE, async () => {
+    try {
+      await downloadManager.clearDownloadCache();
+      return { success: true };
+    } catch (error) {
+      console.error('Error clearing download cache:', error);
+      throw error;
+    }
+  });
+
   ipcMain.handle(IPC_CHANNELS.DOWNLOAD_GET_ALL, async () => {
     try {
       return downloadManager.getAllDownloads();
