@@ -5,9 +5,22 @@ import { devtools, persist } from 'zustand/middleware';
 // Using a safe upper bound (250MB) to prevent out-of-space errors
 // as actual binary sizes vary and are often larger than historical averages
 const SAFE_READER_SIZE = 250 * 1024 * 1024;
+const DEFAULT_SELECTED_READERS = ['windows', 'linux', 'macos', 'android'];
+const LEGACY_READER_ALIASES = { mac: 'macos' };
+const VALID_READERS = new Set(DEFAULT_SELECTED_READERS);
 
 function calculateReaderSize(platforms) {
   return platforms.length * SAFE_READER_SIZE;
+}
+
+function normalizeSelectedReaders(readers) {
+  if (!Array.isArray(readers)) return [...DEFAULT_SELECTED_READERS];
+
+  const normalized = readers
+    .map((reader) => LEGACY_READER_ALIASES[reader] || reader)
+    .filter((reader) => VALID_READERS.has(reader));
+
+  return Array.from(new Set(normalized));
 }
 
 export const useAppFlowStore = create(
@@ -19,7 +32,7 @@ export const useAppFlowStore = create(
         userIntent: null, // 'update' | 'create-new'
         selectedDrive: null,
         selectedZims: [],
-        selectedReaders: ['windows', 'linux', 'macos', 'android'], // All by default
+        selectedReaders: [...DEFAULT_SELECTED_READERS], // All by default
         downloadStrategy: null, // 'local-first' | 'direct-to-usb'
 
         // Download/transfer state
@@ -90,14 +103,16 @@ export const useAppFlowStore = create(
         clearSelectedZims: () => set({ selectedZims: [] }),
 
         toggleReader: (platform) => set((state) => {
-          const exists = state.selectedReaders.includes(platform);
+          const normalizedPlatform = LEGACY_READER_ALIASES[platform] || platform;
+          const normalizedReaders = normalizeSelectedReaders(state.selectedReaders);
+          const exists = normalizedReaders.includes(normalizedPlatform);
           if (exists) {
             return {
-              selectedReaders: state.selectedReaders.filter(p => p !== platform)
+              selectedReaders: normalizedReaders.filter((p) => p !== normalizedPlatform)
             };
           } else {
             return {
-              selectedReaders: [...state.selectedReaders, platform]
+              selectedReaders: [...normalizedReaders, normalizedPlatform]
             };
           }
         }),
@@ -117,7 +132,7 @@ export const useAppFlowStore = create(
           userIntent: null,
           selectedDrive: null,
           selectedZims: [],
-          selectedReaders: ['windows', 'linux', 'macos', 'android'],
+          selectedReaders: [...DEFAULT_SELECTED_READERS],
           downloadStrategy: null,
           downloads: [],
           transferProgress: 0,
@@ -134,9 +149,28 @@ export const useAppFlowStore = create(
       }),
       {
         name: 'app-flow-storage',
+        version: 2,
+        migrate: (persistedState, version) => {
+          if (!persistedState || typeof persistedState !== 'object') {
+            return persistedState;
+          }
+
+          // Migrate legacy "mac" key to "macos" and drop duplicates/invalid values.
+          if (version < 2) {
+            return {
+              ...persistedState,
+              selectedReaders: normalizeSelectedReaders(persistedState.selectedReaders)
+            };
+          }
+
+          return {
+            ...persistedState,
+            selectedReaders: normalizeSelectedReaders(persistedState.selectedReaders)
+          };
+        },
         partialize: (state) => ({
           // Only persist user preferences
-          selectedReaders: state.selectedReaders
+          selectedReaders: normalizeSelectedReaders(state.selectedReaders)
         })
       }
     ),
