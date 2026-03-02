@@ -21,17 +21,30 @@ import { ROUTES, supportsLargeFiles } from '../utils/constants';
  */
 export default function DriveSelectionScreen() {
   const navigate = useNavigate();
-  const { drives, isScanning, scanDrives, startWatching, getUsbDrives } = useDrivesStore();
+  const { drives, isScanning, scanDrives, startWatching, stopWatching, getUsbDrives } = useDrivesStore();
   const { selectedDrive, selectDrive } = useAppFlowStore();
   const [localDownloadSelected, setLocalDownloadSelected] = useState(false);
 
   useEffect(() => {
     // Initial scan
-    scanDrives();
+    scanDrives().catch((error) => {
+      console.error('Initial drive scan failed:', error);
+    });
     // Start watching for drive changes
     startWatching();
+    // Fallback polling in case platform watcher events are missed
+    const pollInterval = setInterval(() => {
+      scanDrives().catch((error) => {
+        console.error('Periodic drive scan failed:', error);
+      });
+    }, 4000);
     // Reset local download selection when entering this screen
     setLocalDownloadSelected(false);
+
+    return () => {
+      clearInterval(pollInterval);
+      stopWatching();
+    };
   }, []);
 
   const usbDrives = getUsbDrives();

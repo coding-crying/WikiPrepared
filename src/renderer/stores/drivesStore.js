@@ -131,16 +131,9 @@ export const useDrivesStore = create(
       getUsbDrives: () => {
         return get().drives.filter((d) => {
           const mountpoint = d.mountpoints?.[0]?.path || d.mountpoint;
-          const hasValidMount = mountpoint && !mountpoint.includes('[') && mountpoint !== '/';
-          const busType = (d.busType || '').toString().toLowerCase();
-          const looksLikeRemovableMount =
-            mountpoint.startsWith('/run/media/') ||
-            mountpoint.startsWith('/media/') ||
-            /^[A-Za-z]:/.test(mountpoint);
-
-          return hasValidMount &&
-            !d.isSystem &&
-            (d.isUSB || d.isRemovable || busType === 'usb' || looksLikeRemovableMount);
+          // Main process already filters to removable/USB drives.
+          // Keep renderer filtering minimal to avoid hiding valid devices.
+          return typeof mountpoint === 'string' && !mountpoint.includes('[') && mountpoint !== '/';
         });
       },
 
