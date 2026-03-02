@@ -7,6 +7,7 @@ const DownloadManager = require('./managers/DownloadManager');
 const KiwixManager = require('./managers/KiwixManager');
 const UpdateService = require('./services/UpdateService');
 const FileService = require('./services/FileService');
+const USBAuditService = require('./services/USBAuditService');
 
 // Initialize managers
 const driveManager = new DriveManager();
@@ -15,6 +16,7 @@ const downloadManager = new DownloadManager();
 const kiwixManager = new KiwixManager();
 const updateService = new UpdateService();
 const fileService = new FileService();
+const usbAuditService = new USBAuditService();
 
 /**
  * Set up all IPC communication handlers
@@ -324,7 +326,7 @@ function setupIpcHandlers() {
   // Transfer Handlers (Local to USB)
   // ========================================
 
-  ipcMain.handle(IPC_CHANNELS.TRANSFER_START, async (event, { destination, filesToTransfer, selectedReaders = [] }) => {
+  ipcMain.handle(IPC_CHANNELS.TRANSFER_START, async (event, { destination, filesToTransfer, selectedReaders = [], overwriteExisting = false }) => {
     try {
       const fs = require('fs-extra');
       const downloadDir = downloadManager.getDownloadDir();
@@ -373,9 +375,9 @@ function setupIpcHandlers() {
       let transferredSize = 0;
       const windows = require('electron').BrowserWindow.getAllWindows();
 
-      // Copy each file
-      for (const fileInfo of fileInfos) {
-        console.log(`Transferring: ${fileInfo.name}`);
+	      // Copy each file
+	      for (const fileInfo of fileInfos) {
+	        console.log(`Transferring: ${fileInfo.name}`);
 
         // Send initial progress for this file
         windows.forEach((window) => {
@@ -388,19 +390,37 @@ function setupIpcHandlers() {
           });
         });
 
-	        try {
-	          // Check if file already exists
-	          const destExists = await fs.pathExists(fileInfo.destinationPath);
-	          if (destExists) {
-	            console.log(`File already exists at destination, skipping: ${fileInfo.name}`);
-	            transferredSize += fileInfo.size;
-	          }
+		        try {
+		          // Check if file already exists
+		          const destExists = await fs.pathExists(fileInfo.destinationPath);
+		          if (destExists && !overwriteExisting) {
+		            console.log(`File already exists at destination, skipping: ${fileInfo.name}`);
+		            transferredSize += fileInfo.size;
+		          }
 
-	          if (!destExists) {
-	            // Copy file with progress tracking
-	            await new Promise((resolve, reject) => {
-	              const readStream = fs.createReadStream(fileInfo.sourcePath);
-	              const writeStream = fs.createWriteStream(fileInfo.destinationPath);
+		          if (destExists && overwriteExisting) {
+		            console.log(`Overwriting existing destination file: ${fileInfo.name}`);
+		            windows.forEach((window) => {
+		              window.webContents.send(IPC_CHANNELS.TRANSFER_PROGRESS, {
+		                currentFile: `Removing old copy of ${fileInfo.name}`,
+		                progress: (transferredSize / totalSize) * 100,
+		                transferredSize,
+		                totalSize,
+		                speed: 0
+		              });
+		            });
+		            try {
+		              await fs.remove(fileInfo.destinationPath);
+		            } catch (e) {
+		              // If we can't remove, let the copy attempt throw a clearer error.
+		            }
+		          }
+
+		          if (!destExists || overwriteExisting) {
+		            // Copy file with progress tracking
+		            await new Promise((resolve, reject) => {
+		              const readStream = fs.createReadStream(fileInfo.sourcePath);
+		              const writeStream = fs.createWriteStream(fileInfo.destinationPath);
 
 	              let copiedBytes = 0;
 	              const startTime = Date.now();
@@ -429,8 +449,8 @@ function setupIpcHandlers() {
 	              writeStream.on('finish', resolve);
 
 	              readStream.pipe(writeStream);
-	            });
-	          }
+		            });
+		          }
 
 	          // Verify destination file integrity (critical safeguard).
 	          windows.forEach((window) => {
@@ -490,7 +510,7 @@ function setupIpcHandlers() {
         }
       }
 
-      // Install selected readers on the USB as part of local-first transfer.
+	      // Install selected readers on the USB as part of local-first transfer.
       // This ensures local-first and direct-to-USB end with the same USB layout.
       if (Array.isArray(selectedReaders) && selectedReaders.length > 0) {
         console.log('Installing selected readers to USB:', selectedReaders);
@@ -503,8 +523,8 @@ function setupIpcHandlers() {
               transferredSize,
               totalSize,
               speed: 0
+	          });
             });
-          });
 
           try {
             const localReaderPath = readerVersions?.[platform]?.filename
@@ -541,6 +561,36 @@ function setupIpcHandlers() {
       windows.forEach((window) => {
         window.webContents.send(IPC_CHANNELS.TRANSFER_ERROR, {
           message: error.message
+        });
+      });
+      throw error;
+    }
+  });
+
+  // ========================================
+  // USB Audit / Integrity
+  // ========================================
+
+  ipcMain.handle(IPC_CHANNELS.USB_AUDIT_SCAN, async (_event, usbPath, options = {}) => {
+    const windows = require('electron').BrowserWindow.getAllWindows();
+    try {
+      const res = await usbAuditService.scan(usbPath, options, (progress) => {
+        windows.forEach((window) => {
+          window.webContents.send(IPC_CHANNELS.USB_AUDIT_PROGRESS, {
+            usbPath,
+            ...progress,
+            timestamp: Date.now(),
+          });
+        });
+      });
+      return res;
+    } catch (error) {
+      windows.forEach((window) => {
+        window.webContents.send(IPC_CHANNELS.USB_AUDIT_PROGRESS, {
+          usbPath,
+          phase: 'error',
+          error: error.message,
+          timestamp: Date.now(),
         });
       });
       throw error;

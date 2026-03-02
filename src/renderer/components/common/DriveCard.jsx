@@ -1,11 +1,12 @@
 import React from 'react';
-import { Card, CardActionArea, Typography, Box, Chip, LinearProgress, Tooltip } from '@mui/material';
+import { Card, CardActionArea, Typography, Box, Chip, LinearProgress, Tooltip, Button } from '@mui/material';
 import {
   CheckCircle as CheckIcon,
   Usb as UsbIcon,
   LibraryBooks as ZimIcon,
   Warning as WarningIcon,
-  CheckCircleOutline as GoodIcon
+  CheckCircleOutline as GoodIcon,
+  FactCheck as AuditIcon
 } from '@mui/icons-material';
 import { formatBytes, formatGB, toGB } from '../../utils/formatters';
 import { supportsLargeFiles, STORAGE } from '../../utils/constants';
@@ -14,7 +15,7 @@ import { useDrivesStore } from '../../stores/drivesStore';
 /**
  * Drive card component - taller layout with clear capacity/filesystem info
  */
-export default function DriveCard({ drive, isSelected, onSelect }) {
+export default function DriveCard({ drive, isSelected, onSelect, onAudit }) {
   const sizeGB = toGB(drive.size);
   const freeGB = toGB(drive.freeSpace || 0);
   const isLargeEnough = sizeGB >= STORAGE.MIN_RECOMMENDED_GB;
@@ -197,6 +198,23 @@ export default function DriveCard({ drive, isSelected, onSelect }) {
             <Typography variant="caption" color="warning.main">
               Drive is smaller than recommended {STORAGE.MIN_RECOMMENDED_GB}GB
             </Typography>
+          </Box>
+        )}
+
+        {typeof onAudit === 'function' && zimCount > 0 && (
+          <Box sx={{ mt: 2, display: 'flex', justifyContent: 'flex-end' }}>
+            <Button
+              size="small"
+              variant="outlined"
+              startIcon={<AuditIcon sx={{ fontSize: 16 }} />}
+              onClick={(e) => {
+                e.stopPropagation();
+                onAudit();
+              }}
+              sx={{ textTransform: 'none' }}
+            >
+              Audit USB
+            </Button>
           </Box>
         )}
       </CardActionArea>

@@ -67,6 +67,12 @@ export default function DriveSelectionScreen() {
     setLocalDownloadSelected(false); // Clear local download selection
   };
 
+  const handleAuditDrive = (drive) => {
+    selectDrive(drive);
+    setLocalDownloadSelected(false);
+    navigate(ROUTES.USB_AUDIT);
+  };
+
   const handleBack = () => {
     selectDrive(null);
     navigate(ROUTES.START);
@@ -170,6 +176,7 @@ export default function DriveSelectionScreen() {
                   drive={drive}
                   isSelected={selectedDrive?.device === drive.device}
                   onSelect={() => handleSelectDrive(drive)}
+                  onAudit={() => handleAuditDrive(drive)}
                 />
               </Grid>
             ))}

@@ -14,6 +14,7 @@ import DownloadStrategyScreen from './screens/DownloadStrategyScreen';
 import DownloadProgressScreen from './screens/DownloadProgressScreen';
 import TransferProgressScreen from './screens/TransferProgressScreen';
 import CompletionScreen from './screens/CompletionScreen';
+import USBAuditScreen from './screens/USBAuditScreen';
 
 // Debug component (only in development)
 import ElectronAPIDebug from './components/common/ElectronAPIDebug';
@@ -44,6 +45,7 @@ export default function App() {
           <Route path={ROUTES.DOWNLOADING} element={<DownloadProgressScreen />} />
           <Route path={ROUTES.TRANSFERRING} element={<TransferProgressScreen />} />
           <Route path={ROUTES.COMPLETE} element={<CompletionScreen />} />
+          <Route path={ROUTES.USB_AUDIT} element={<USBAuditScreen />} />
 
           {/* Catch all - redirect to start */}
           <Route path="*" element={<Navigate to={ROUTES.START} replace />} />

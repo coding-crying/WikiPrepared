@@ -71,6 +71,10 @@ const IPC_CHANNELS = {
   TRANSFER_COMPLETED: 'transfer:completed', // Event
   TRANSFER_ERROR: 'transfer:error', // Event
 
+  // USB Audit / Integrity
+  USB_AUDIT_SCAN: 'usb:audit:scan',
+  USB_AUDIT_PROGRESS: 'usb:audit:progress', // Event
+
   // Settings
   SETTINGS_GET: 'settings:get',
   SETTINGS_SET: 'settings:set',
@@ -93,6 +97,7 @@ const MAIN_TO_RENDERER_CHANNELS = [
   IPC_CHANNELS.TRANSFER_PROGRESS,
   IPC_CHANNELS.TRANSFER_COMPLETED,
   IPC_CHANNELS.TRANSFER_ERROR,
+  IPC_CHANNELS.USB_AUDIT_PROGRESS,
 ];
 
 // Channels that require elevated permissions (warnings)

@@ -106,7 +106,8 @@ export const ROUTES = {
   DOWNLOAD_STRATEGY: '/download-strategy',
   DOWNLOADING: '/downloading',
   TRANSFERRING: '/transferring',
-  COMPLETE: '/complete'
+  COMPLETE: '/complete',
+  USB_AUDIT: '/usb-audit'
 };
 
 // Language names (common ones, more can be added)
