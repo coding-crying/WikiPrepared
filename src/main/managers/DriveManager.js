@@ -13,6 +13,101 @@ class DriveManager {
     this.lastDriveList = [];
   }
 
+  normalizeFilesystem(filesystem) {
+    const fs = (filesystem || 'exfat').toString().trim().toLowerCase();
+    if (fs === 'exfat' || fs === 'ex-fat') return 'exfat';
+    if (fs === 'fat32' || fs === 'vfat' || fs === 'fat') return 'fat32';
+    if (fs === 'ntfs') return 'ntfs';
+    return fs;
+  }
+
+  isSafeLinuxDevicePath(devicePath) {
+    return typeof devicePath === 'string' && /^\/dev\/[A-Za-z0-9._-]+$/.test(devicePath);
+  }
+
+  isSafeLinuxDeviceName(deviceName) {
+    return typeof deviceName === 'string' && /^[A-Za-z0-9._-]+$/.test(deviceName);
+  }
+
+  diskutilInfoSync(target) {
+    const { execSync } = require('child_process');
+    const output = execSync(`diskutil info "${target}"`, { encoding: 'utf8' });
+
+    const parseBytesInParens = (line) => {
+      if (!line) return null;
+      const match = line.match(/\((\d+)\s+Bytes\)/i);
+      return match ? Number(match[1]) : null;
+    };
+
+    const lines = output.split('\n').map((l) => l.trim()).filter(Boolean);
+    const getVal = (prefix) => {
+      const line = lines.find((l) => l.startsWith(prefix));
+      if (!line) return null;
+      return line.slice(prefix.length).trim();
+    };
+
+    const getBytesFromPrefixes = (prefixes) => {
+      for (const prefix of prefixes) {
+        const v = getVal(prefix);
+        const bytes = parseBytesInParens(v);
+        if (Number.isFinite(bytes)) return bytes;
+      }
+      return null;
+    };
+
+    const deviceNode = getVal('Device Node:');
+    const partOfWhole = getVal('Part of Whole:');
+    const volumeName = getVal('Volume Name:');
+    const fsPersonality = getVal('File System Personality:');
+    const typeBundle = getVal('Type (Bundle):');
+
+    const totalBytes = getBytesFromPrefixes([
+      'Volume Total Space:',
+      'Container Total Space:',
+      'Disk Size:',
+      'Total Size:',
+    ]);
+
+    const freeBytes = getBytesFromPrefixes([
+      'Volume Free Space:',
+      'Container Free Space:',
+    ]);
+
+    return {
+      deviceNode: deviceNode || null,
+      wholeDisk: partOfWhole ? `/dev/${partOfWhole}` : null,
+      volumeName: volumeName || null,
+      filesystem: (fsPersonality || typeBundle || null),
+      totalBytes,
+      freeBytes,
+    };
+  }
+
+  /**
+   * Resolve a Windows drive identifier to a mountable drive letter (e.g. "E:")
+   * @param {string} drivePath - Device path, mount path, or drive letter
+   * @returns {Promise<string|null>} Drive letter with colon, or null if unresolved
+   */
+  async resolveWindowsDriveLetter(drivePath) {
+    if (!drivePath) return null;
+
+    const directMatch = drivePath.match(/^([A-Za-z]):/);
+    if (directMatch) {
+      return `${directMatch[1].toUpperCase()}:`;
+    }
+
+    const drives = await drivelist.list();
+    const matchedDrive = drives.find((d) =>
+      d.device === drivePath ||
+      d.devicePath === drivePath ||
+      d.mountpoints.some((mp) => mp.path === drivePath)
+    );
+
+    const mountPath = matchedDrive?.mountpoints?.[0]?.path || null;
+    const mountMatch = mountPath ? mountPath.match(/^([A-Za-z]):/) : null;
+    return mountMatch ? `${mountMatch[1].toUpperCase()}:` : null;
+  }
+
   /**
    * List all connected drives
    * @returns {Promise<Array>} List of drive objects
@@ -21,9 +116,16 @@ class DriveManager {
     try {
       const drives = await drivelist.list();
 
-      // Filter for USB drives and add additional info
+      const isValidMountPath = (mp) => {
+        const p = mp?.path;
+        return Boolean(p) && !p.includes('[') && !p.includes(']') && p !== '/';
+      };
+
+      // Filter for USB/removable drives with a usable mount path.
+      // This avoids false positives like zram `[SWAP]` being treated as a removable drive.
       const formattedDrives = drives
         .filter((drive) => drive.isUSB || drive.isRemovable)
+        .filter((drive) => Array.isArray(drive.mountpoints) && drive.mountpoints.some(isValidMountPath))
         .map((drive) => this.formatDriveInfo(drive));
 
       return formattedDrives;
@@ -88,20 +190,22 @@ class DriveManager {
         // Try to get label using lsblk if missing (Linux only)
         if ((!mountpoint.label || mountpoint.label === 'Unnamed Drive') && os.platform() === 'linux') {
            try {
-             // lsblk -n -o LABEL /run/media/user/drive
-             // Use mountpoint.path
-             const label = execSync(`lsblk -n -o LABEL "${mountpoint.path}"`, { encoding: 'utf8' }).trim();
-             if (label) {
-               mountpoint.label = label;
-               drive.description = label; // Also update description
+             // Use device path, not mount path, for lsblk
+             const devicePath = drive.device || drive.devicePath;
+             if (devicePath) {
+               const label = execSync(`lsblk -n -o LABEL "${devicePath}" 2>/dev/null`, { encoding: 'utf8' }).trim();
+               if (label) {
+                 mountpoint.label = label;
+                 drive.description = label; // Also update description
+               }
              }
            } catch (e) {
-             // Ignore error
+             // Ignore error silently
            }
         }
 
         if (os.platform() === 'win32') {
-          // Windows: use wmic
+          // Windows: use wmic with PowerShell fallback
           const driveLetter = mountpoint.path.charAt(0).toUpperCase();
           try {
             const result = execSync(`wmic logicaldisk where "DeviceID='${driveLetter}:'" get FileSystem,FreeSpace,Size /format:csv`, { encoding: 'utf8' });
@@ -116,21 +220,104 @@ class DriveManager {
               }
             }
           } catch (e) {
-            console.warn('Failed to get Windows disk info:', e.message);
+            try {
+              const psResult = execSync(
+                `powershell -NoProfile -Command "(Get-CimInstance Win32_LogicalDisk -Filter \\"DeviceID='${driveLetter}:'\\") | Select-Object FileSystem,FreeSpace,Size | ConvertTo-Json -Compress"`,
+                { encoding: 'utf8' }
+              );
+              const parsed = JSON.parse(psResult.trim());
+              filesystem = parsed?.FileSystem || null;
+              freeSpace = Number(parsed?.FreeSpace) || drive.size;
+              const totalSize = Number(parsed?.Size) || drive.size;
+              usedSpace = totalSize - freeSpace;
+            } catch (psError) {
+              console.warn('Failed to get Windows disk info:', psError.message);
+            }
+          }
+        } else if (os.platform() === 'darwin') {
+          // macOS: diskutil provides more reliable filesystem and byte counts than parsing df output.
+          try {
+            const info = this.diskutilInfoSync(mountpoint.path);
+
+            if ((!mountpoint.label || mountpoint.label === 'Unnamed Drive') && info.volumeName && info.volumeName !== 'Not applicable') {
+              mountpoint.label = info.volumeName;
+              drive.description = info.volumeName;
+            }
+
+            if (info.filesystem && info.filesystem !== 'Not applicable') {
+              filesystem = info.filesystem;
+            }
+
+            if (Number.isFinite(info.totalBytes) && Number.isFinite(info.freeBytes)) {
+              freeSpace = info.freeBytes;
+              usedSpace = Math.max(0, info.totalBytes - info.freeBytes);
+            }
+          } catch (e) {
+            // Fall back to df/stat parsing below.
           }
         } else {
           // Unix: use df for space and filesystem
           try {
-            const dfResult = execSync(`df -T "${mountpoint.path}" 2>/dev/null || df "${mountpoint.path}"`, { encoding: 'utf8' });
+            // Try df -T first (with type), fall back to regular df
+            let dfResult;
+            try {
+              dfResult = execSync(`df -T "${mountpoint.path}"`, { encoding: 'utf8' });
+            } catch (e) {
+              dfResult = execSync(`df "${mountpoint.path}"`, { encoding: 'utf8' });
+            }
+
             const lines = dfResult.trim().split('\n');
             if (lines.length >= 2) {
               const parts = lines[1].split(/\s+/);
-              // df -T output: Filesystem Type 1K-blocks Used Available Use% Mounted
-              if (parts.length >= 6) {
-                filesystem = parts[1]; // Filesystem type
-                const totalBlocks = parseInt(parts[2]) * 1024;
+
+              // df -T output: Filesystem Type 1K-blocks Used Available Use% Mounted (7 parts)
+              // df output:    Filesystem 1K-blocks Used Available Use% Mounted (6 parts)
+              if (parts.length >= 7) {
+                // Has filesystem type
+                filesystem = parts[1];
                 usedSpace = parseInt(parts[3]) * 1024;
                 freeSpace = parseInt(parts[4]) * 1024;
+              } else if (parts.length >= 6) {
+                // No filesystem type column
+                usedSpace = parseInt(parts[2]) * 1024;
+                freeSpace = parseInt(parts[3]) * 1024;
+
+                // Try to get filesystem from /proc/mounts
+                try {
+                  const mountsResult = execSync(`grep "${mountpoint.path}" /proc/mounts | head -1`, { encoding: 'utf8' });
+                  const mountParts = mountsResult.trim().split(/\s+/);
+                  if (mountParts.length >= 3) {
+                    filesystem = mountParts[2];
+                  }
+                } catch (e) {
+                  // Ignore
+                }
+              }
+
+              if (!filesystem) {
+                if (os.platform() === 'darwin') {
+                  try {
+                    const statFs = execSync(`stat -f %T "${mountpoint.path}"`, { encoding: 'utf8' }).trim();
+                    if (statFs) filesystem = statFs;
+                  } catch (e) {
+                    // Ignore
+                  }
+                } else if (os.platform() === 'linux') {
+                  try {
+                    const fsType = execSync(`findmnt -n -o FSTYPE --target "${mountpoint.path}"`, { encoding: 'utf8' }).trim();
+                    if (fsType) filesystem = fsType;
+                  } catch (e) {
+                    // Ignore
+                  }
+                }
+              }
+
+              // Only log once per drive mount (check if values changed significantly)
+              if (!this._lastLoggedSpace ||
+                  Math.abs(this._lastLoggedSpace.used - usedSpace) > 1024 * 1024 * 100 || // >100MB change
+                  this._lastLoggedSpace.path !== mountpoint.path) {
+                console.log(`Drive space detected: used=${Math.round(usedSpace/1024/1024/1024)}GB, free=${Math.round(freeSpace/1024/1024/1024)}GB, fs=${filesystem}, path=${mountpoint.path}`);
+                this._lastLoggedSpace = { used: usedSpace, path: mountpoint.path };
               }
             }
           } catch (e) {
@@ -154,6 +341,7 @@ class DriveManager {
       usedSpace,
       freeSpace,
       filesystem,
+      fsType: filesystem, // Add alias for compatibility
       isUSB: drive.isUSB,
       isRemovable: drive.isRemovable,
       isReadOnly: drive.isReadOnly,
@@ -304,8 +492,23 @@ class DriveManager {
   async validateDrive(drivePath) {
     try {
       const drives = await drivelist.list();
+      const os = require('os');
+      const platform = os.platform();
+
+      const normalizeWinLetter = (p) => {
+        if (!p) return null;
+        const match = p.toString().trim().match(/^([A-Za-z]):/);
+        return match ? `${match[1].toUpperCase()}:` : null;
+      };
+
+      const wantedLetter = platform === 'win32' ? normalizeWinLetter(drivePath) : null;
       const drive = drives.find((d) => {
-        return d.device === drivePath || d.mountpoints.some((mp) => mp.path === drivePath);
+        if (d.device === drivePath || d.devicePath === drivePath) return true;
+        if (d.mountpoints?.some((mp) => mp.path === drivePath)) return true;
+        if (wantedLetter) {
+          return d.mountpoints?.some((mp) => normalizeWinLetter(mp.path) === wantedLetter);
+        }
+        return false;
       });
 
       if (!drive) {
@@ -440,6 +643,7 @@ class DriveManager {
     const util = require('util');
     const execAsync = util.promisify(exec);
     const platform = os.platform();
+    const fsNorm = this.normalizeFilesystem(filesystem);
 
     console.log(`Formatting ${drivePath} to ${filesystem}...`);
 
@@ -477,6 +681,9 @@ class DriveManager {
         
         // Ensure no newlines or spaces in device path
         diskDevice = diskDevice.trim();
+        if (!this.isSafeLinuxDevicePath(diskDevice)) {
+          throw new Error(`Unsafe disk device path: ${diskDevice}`);
+        }
         console.log(`Targeting whole disk for repartitioning: ${diskDevice}`);
 
         // 2. Unmount ALL partitions on this disk
@@ -490,6 +697,7 @@ class DriveManager {
           console.log('Unmounting partitions:', partitions);
           
           for (const partition of partitions) {
+             if (!this.isSafeLinuxDeviceName(partition)) continue;
              const partPath = `/dev/${partition}`;
              try {
                await execAsync(`udisksctl unmount -b ${partPath}`);
@@ -543,16 +751,25 @@ class DriveManager {
            if (diskDevice.includes('nvme')) targetPartition = `${diskDevice}p1`;
            console.log(`Guessing new partition: ${targetPartition}`);
         }
+        if (!this.isSafeLinuxDevicePath(targetPartition)) {
+          throw new Error(`Unsafe target partition path: ${targetPartition}`);
+        }
 
         // 6. Format the new partition
         const label = 'WIKIPREP';
-        console.log(`Formatting ${targetPartition} to ${filesystem}...`);
+        console.log(`Formatting ${targetPartition} to ${fsNorm}...`);
         
+        const mkfsCmd = (() => {
+          if (fsNorm === 'exfat') return `mkfs.exfat -n ${label} ${targetPartition}`;
+          if (fsNorm === 'fat32') return `mkfs.vfat -F 32 -n ${label.slice(0, 11)} ${targetPartition}`;
+          if (fsNorm === 'ntfs') return `mkfs.ntfs -f -L ${label} ${targetPartition}`;
+          throw new Error(`Unsupported filesystem on Linux: ${filesystem}`);
+        })();
+
         try {
-           // Try mkfs.exfat directly with pkexec
-           await execAsync(`pkexec mkfs.exfat -n ${label} ${targetPartition}`);
+          await execAsync(`pkexec ${mkfsCmd}`);
         } catch (err) {
-           throw new Error(`Failed to format new partition: ${err.message}`);
+          throw new Error(`Failed to format new partition: ${err.message}`);
         }
         
         // 7. Wait for auto-mount
@@ -562,39 +779,54 @@ class DriveManager {
         return { success: true, message: `Drive repartitioned and formatted to ${filesystem} successfully.` };
 
       } else if (platform === 'darwin') {
-        // macOS: diskutil eraseDisk ExFAT WikiPrepared /dev/disk2
-        // Note: eraseDisk formats the whole disk and creates a new map. 
-        // If drivePath is a partition (disk2s1), use eraseVolume.
-        
-        const label = 'WikiPrepared';
-        const fsType = filesystem.toUpperCase() === 'EXFAT' ? 'ExFAT' : 'MS-DOS'; // MS-DOS is FAT32
-        
-        let cmd = '';
-        if (drivePath.match(/disk[0-9]+$/)) {
-           // Whole disk
-           cmd = `diskutil eraseDisk ${fsType} ${label} MBRFormat ${drivePath}`;
-        } else {
-           // Partition
-           cmd = `diskutil eraseVolume ${fsType} ${label} ${drivePath}`;
+        // macOS: prefer diskutil with a best-effort resolution from mount path -> device node -> whole disk.
+        if (fsNorm === 'ntfs') {
+          throw new Error('NTFS formatting is not supported on macOS. Use exFAT or FAT32.');
         }
-        
+
+        const label = 'WikiPrepared';
+        const fsType = fsNorm === 'exfat' ? 'ExFAT' : 'MS-DOS'; // MS-DOS is FAT32
+
+        let deviceNode = drivePath;
+        let wholeDisk = null;
+
+        try {
+          const info = this.diskutilInfoSync(drivePath);
+          deviceNode = info.deviceNode || drivePath;
+          wholeDisk = info.wholeDisk || null;
+        } catch (e) {
+          // If diskutil info fails, proceed with the provided path.
+        }
+
+        const isWholeDisk = /^\/dev\/disk\d+$/.test(deviceNode) || (wholeDisk && deviceNode === wholeDisk);
+        const cmd = isWholeDisk
+          ? `diskutil eraseDisk ${fsType} ${label} MBRFormat ${wholeDisk || deviceNode}`
+          : `diskutil eraseVolume ${fsType} ${label} ${deviceNode}`;
+
         console.log('Executing:', cmd);
         await execAsync(cmd);
-        return { success: true, message: `Drive formatted to ${filesystem} successfully.` };
+        return { success: true, message: `Drive formatted to ${fsNorm} successfully.` };
 
       } else if (platform === 'win32') {
-        // Windows
-        // drivePath might be a device path from drivelist, but we need a drive letter for `format`.
-        // or we can use diskpart? diskpart is hard to script non-interactively without a script file.
-        
-        // Try to find drive letter from mountpoints? 
-        // The `drivePath` passed from UI `selectedDrive.device` is usually `\\.\PHYSICALDRIVE1` on Windows from drivelist.
-        // But we need the volume letter (E:).
-        
-        // This is tricky. If we can't find the letter, we can't easily use `format`.
-        // For now, return error on Windows prompting manual format.
-        
-        throw new Error('Automatic formatting on Windows is not yet supported. Please format the drive manually in File Explorer.');
+        const driveLetter = await this.resolveWindowsDriveLetter(drivePath);
+        if (!driveLetter) {
+          throw new Error('Could not determine drive letter for formatting.');
+        }
+
+        const fsType = fsNorm === 'ntfs' ? 'NTFS' : fsNorm === 'fat32' ? 'FAT32' : 'exFAT';
+        const label = 'WikiPrepared';
+        const letterOnly = driveLetter.replace(':', '');
+
+        // Requires elevated privileges on Windows.
+        try {
+          await execAsync(
+            `powershell -NoProfile -ExecutionPolicy Bypass -Command "Format-Volume -DriveLetter '${letterOnly}' -FileSystem ${fsType} -NewFileSystemLabel '${label}' -Force -Confirm:\\$false"`
+          );
+        } catch (e) {
+          throw new Error(`Windows formatting requires Administrator privileges. ${e.message}`);
+        }
+
+        return { success: true, message: `Drive ${driveLetter} formatted to ${fsType} successfully.` };
         
       } else {
         throw new Error(`Unsupported platform: ${platform}`);
@@ -616,6 +848,9 @@ class DriveManager {
    * @returns {Promise<Object>} Result
    */
   async ejectDrive(drivePath) {
+    // Capture callback before stopping
+    const savedCallback = this.watchCallback;
+
     // Stop watching drives to prevent race conditions/file locks during ejection
     this.stopWatching();
 
@@ -630,50 +865,89 @@ class DriveManager {
 
     try {
       if (platform === 'linux') {
-        // First sync to flush buffers
-        await execAsync('sync');
+        console.log('Starting Linux eject sequence...');
 
-        // Get block device name (e.g., sda from /dev/sda or /dev/sda1)
-        let blockDevice = drivePath;
+        // First sync to flush buffers (with timeout)
+        console.log('Syncing filesystem...');
+        await Promise.race([
+          execAsync('sync'),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Sync timeout')), 10000))
+        ]);
+        console.log('Sync completed');
+
+        // Resolve parent block device safely (handles /dev/sda1, /dev/nvme0n1p1, etc.)
+        let blockDevice = null;
         if (drivePath.startsWith('/dev/')) {
-          blockDevice = drivePath.replace('/dev/', '').replace(/[0-9]+$/, '');
+          try {
+            const { stdout } = await execAsync(`lsblk -no pkname ${drivePath}`);
+            const parent = stdout.trim().split('\n')[0].trim();
+            if (parent) blockDevice = parent;
+          } catch (e) {
+            // Ignore
+          }
+
+          if (!blockDevice) {
+            const base = drivePath.replace('/dev/', '').trim();
+            blockDevice = base.replace(/p?\d+$/, '');
+          }
+        } else {
+          throw new Error('Linux eject expects a /dev/* drive path');
         }
+
+        if (!this.isSafeLinuxDeviceName(blockDevice)) {
+          throw new Error(`Unsafe block device: ${blockDevice}`);
+        }
+        console.log('Target block device:', blockDevice);
 
         // Try udisksctl first (works without root on most modern Linux)
         let unmountedAny = false;
 
         // First unmount all partitions on the device
         try {
-          const { stdout } = await execAsync(`lsblk -ln -o NAME /dev/${blockDevice} 2>/dev/null || echo "${blockDevice}"`);
+          console.log('Listing partitions...');
+          const { stdout } = await Promise.race([
+            execAsync(`lsblk -ln -o NAME /dev/${blockDevice} 2>/dev/null || echo "${blockDevice}"`),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('lsblk timeout')), 5000))
+          ]);
           const partitions = stdout.trim().split('\n').filter(p => p.trim());
           console.log('Found partitions to unmount:', partitions);
 
           for (const partition of partitions) {
+            if (!this.isSafeLinuxDeviceName(partition.trim())) continue;
             const partPath = `/dev/${partition.trim()}`;
             try {
               console.log(`Unmounting ${partPath}...`);
-              await execAsync(`udisksctl unmount -b ${partPath}`);
+              await Promise.race([
+                execAsync(`udisksctl unmount -b ${partPath}`),
+                new Promise((_, reject) => setTimeout(() => reject(new Error('Unmount timeout')), 10000))
+              ]);
               console.log(`Successfully unmounted ${partPath}`);
               unmountedAny = true;
             } catch (e) {
               console.log(`Standard unmount failed for ${partPath}:`, e.message);
-              
+
               // Attempt force unmount via udisksctl (no root needed usually)
               try {
                  console.log(`Attempting force unmount for ${partPath}...`);
-                 await execAsync(`udisksctl unmount -b ${partPath} --force`);
+                 await Promise.race([
+                   execAsync(`udisksctl unmount -b ${partPath} --force`),
+                   new Promise((_, reject) => setTimeout(() => reject(new Error('Force unmount timeout')), 10000))
+                 ]);
                  console.log(`Force unmount successful for ${partPath}`);
                  unmountedAny = true;
-                 continue; 
+                 continue;
               } catch (forceErr) {
                  console.log(`Force unmount failed: ${forceErr.message}`);
               }
-              
+
               // If still busy, try lazy unmount (requires root)
               if (e.message.includes('busy') || e.message.includes('target is busy')) {
                  console.log(`Device busy, attempting lazy unmount for ${partPath}...`);
                  try {
-                   await execAsync(`pkexec umount -l ${partPath}`);
+                   await Promise.race([
+                     execAsync(`pkexec umount -l ${partPath}`),
+                     new Promise((_, reject) => setTimeout(() => reject(new Error('Lazy unmount timeout')), 15000))
+                   ]);
                    console.log(`Lazy unmount successful for ${partPath}`);
                    unmountedAny = true;
                  } catch (lazyErr) {
@@ -686,35 +960,57 @@ class DriveManager {
           console.log('Failed to list partitions:', lsblkError.message);
         }
 
-        // Try to power off the drive (optional, unmount is the key part)
+        // If we successfully unmounted, we're done - skip the problematic power-off
+        if (unmountedAny) {
+          console.log('Drive unmounted successfully, skipping power-off');
+          return { success: true, message: 'Drive unmounted. You can safely remove it now.' };
+        }
+
+        // Try to power off the drive only if unmount failed (with timeout)
         try {
-          await execAsync(`udisksctl power-off -b /dev/${blockDevice}`);
+          console.log('Attempting power-off...');
+          await Promise.race([
+            execAsync(`udisksctl power-off -b /dev/${blockDevice}`),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Power-off timeout after 10s')), 10000))
+          ]);
           console.log('Drive powered off successfully');
           return { success: true, message: 'Drive ejected safely. You can now remove it.' };
         } catch (powerOffError) {
-          console.log('Power-off failed (may need elevated permissions):', powerOffError.message);
-          // Power-off failed, but if we unmounted, that's good enough
-          if (unmountedAny) {
-            return { success: true, message: 'Drive unmounted. You can safely remove it now.' };
-          }
+          console.log('Power-off failed or timed out:', powerOffError.message);
           // Nothing worked, throw an error
-          throw new Error('Could not unmount drive. Please unmount manually before removing.');
+          throw new Error('Could not unmount or eject drive. Please unmount manually before removing.');
         }
       } else if (platform === 'darwin') {
         // macOS
-        if (drivePath.startsWith('/dev/')) {
-          await execAsync(`diskutil eject ${drivePath}`);
-        } else {
-          await execAsync(`diskutil unmount "${drivePath}"`);
+        let target = drivePath;
+        try {
+          const info = this.diskutilInfoSync(drivePath);
+          target = info.wholeDisk || info.deviceNode || drivePath;
+        } catch (e) {
+          // Ignore, fall back to the provided path.
+        }
+
+        try {
+          await execAsync(`diskutil eject "${target}"`);
+        } catch (e) {
+          await execAsync(`diskutil unmountDisk "${target}"`);
         }
         return { success: true, message: 'Drive ejected safely. You can now remove it.' };
       } else if (platform === 'win32') {
         // Windows - use PowerShell to eject
-        // Extract drive letter from path (e.g., "E:" from "E:\")
-        const driveLetter = drivePath.match(/^([A-Za-z]:)/)?.[1];
+        const driveLetter = await this.resolveWindowsDriveLetter(drivePath);
         if (driveLetter) {
           // Use PowerShell to eject the drive
-          await execAsync(`powershell -Command "(New-Object -comObject Shell.Application).NameSpace(17).ParseName('${driveLetter}').InvokeVerb('Eject')"`);
+          try {
+            await execAsync(`powershell -NoProfile -Command "(New-Object -comObject Shell.Application).NameSpace(17).ParseName('${driveLetter}').InvokeVerb('Eject')"`);
+          } catch (e) {
+            // Fallback: dismount/remove mount point (often requires admin).
+            try {
+              await execAsync(`cmd /c mountvol ${driveLetter} /p`);
+            } catch (e2) {
+              throw new Error(`Windows eject failed. Try ejecting via File Explorer. ${e2.message}`);
+            }
+          }
           return { success: true, message: 'Drive ejected safely. You can now remove it.' };
         } else {
           throw new Error('Could not determine drive letter');
@@ -725,6 +1021,12 @@ class DriveManager {
     } catch (error) {
       console.error('Eject error:', error);
       throw new Error(`Failed to eject drive: ${error.message}`);
+    } finally {
+      // Restart watching if it was active
+      if (savedCallback) {
+        console.log('Restarting drive watching...');
+        this.startWatching(savedCallback);
+      }
     }
   }
 }

@@ -1,8 +1,10 @@
 const axios = require('axios');
 const fs = require('fs-extra');
 const path = require('path');
+const AdmZip = require('adm-zip');
 const { app } = require('electron');
 const { KIWIX_PLATFORMS, URLS } = require('../../shared/constants');
+const PlatformLauncherService = require('../services/PlatformLauncherService');
 
 /**
  * KiwixManager - Handles Kiwix reader downloads and installation with caching
@@ -13,11 +15,13 @@ class KiwixManager {
       [KIWIX_PLATFORMS.WINDOWS]: null,
       [KIWIX_PLATFORMS.LINUX]: null,
       [KIWIX_PLATFORMS.MAC]: null,
+      [KIWIX_PLATFORMS.ANDROID]: null,
     };
 
     // Cache directory for downloaded readers
     this.cacheDir = path.join(app.getPath('userData'), 'kiwix-cache');
     this.ensureCacheDir();
+    this.platformLauncherService = new PlatformLauncherService();
   }
 
   /**
@@ -129,40 +133,182 @@ class KiwixManager {
   }
 
   /**
+   * Resolve a URL to its final destination to get versioned filename
+   * @param {string} url - The URL to resolve
+   * @returns {Promise<Object>} Object containing finalUrl and filename
+   */
+  async resolveUrl(url) {
+    try {
+      const response = await axios.head(url, {
+        maxRedirects: 5,
+        validateStatus: function (status) {
+          return status >= 200 && status < 400; // Accept all 2xx and 3xx
+        },
+      });
+      
+      // Axios follows redirects by default, so response.request.res.responseUrl should be the final URL
+      // But in some environments (like Electron net), it might be different.
+      // Let's use the responseURL if available, otherwise fallback to input
+      const finalUrl = response.request.res.responseUrl || url;
+      const filename = path.basename(finalUrl);
+      
+      // Try to extract version from filename (e.g., kiwix-desktop_windows_x64_2.3.1.zip)
+      // Look for pattern _(\d+\.\d+\.\d+)
+      const versionMatch = filename.match(/_(\d+\.\d+\.\d+)/);
+      const version = versionMatch ? versionMatch[1] : 'Latest';
+      
+      return { finalUrl, filename, version };
+    } catch (error) {
+      console.warn(`Failed to resolve URL ${url}:`, error.message);
+      return { finalUrl: url, filename: path.basename(url), version: 'Latest' };
+    }
+  }
+
+  /**
    * Get latest Kiwix reader versions for all platforms
    * @returns {Promise<Object>} Version information
    */
   async getLatestVersions() {
     try {
-      // Note: This is a placeholder implementation
-      // In a real implementation, you would scrape or fetch from Kiwix API
       console.log('Fetching latest Kiwix versions...');
+      
+      // URLs
+      const winUrl = 'https://download.kiwix.org/release/kiwix-desktop/kiwix-desktop_windows_x64.zip';
+      
+      // Resolve Windows version (since it's a zip we want to extract)
+      const winInfo = await this.resolveUrl(winUrl);
 
       return {
         [KIWIX_PLATFORMS.WINDOWS]: {
-          version: '3.3.0',
-          url: 'https://download.kiwix.org/release/kiwix-desktop/kiwix-desktop_windows_x64_3.3.0.zip',
-          filename: 'kiwix-desktop_windows_x64_3.3.0.zip',
-          size: 85000000, // ~85MB
-          releaseDate: '2023-10-15',
+          version: winInfo.version,
+          url: winInfo.finalUrl, // Use resolved URL
+          filename: winInfo.filename,
+          size: 85000000, // Approx
+          releaseDate: new Date().toISOString().split('T')[0],
         },
         [KIWIX_PLATFORMS.LINUX]: {
-          version: '3.3.0',
-          url: 'https://download.kiwix.org/release/kiwix-desktop/kiwix-desktop_x86_64_3.3.0.appimage',
-          filename: 'kiwix-desktop_x86_64_3.3.0.appimage',
-          size: 90000000, // ~90MB
-          releaseDate: '2023-10-15',
+          version: 'Latest',
+          url: 'https://download.kiwix.org/release/kiwix-desktop/kiwix-desktop_x86_64.appimage',
+          filename: 'kiwix-desktop_x86_64.appimage',
+          size: 90000000, // Approx
+          releaseDate: new Date().toISOString().split('T')[0],
         },
         [KIWIX_PLATFORMS.MAC]: {
-          version: '3.3.0',
-          url: 'https://download.kiwix.org/release/kiwix-desktop/kiwix-desktop_macos_3.3.0.dmg',
-          filename: 'kiwix-desktop_macos_3.3.0.dmg',
-          size: 95000000, // ~95MB
-          releaseDate: '2023-10-15',
+          version: 'Latest',
+          url: 'https://download.kiwix.org/release/kiwix-macos/kiwix-macos.dmg',
+          filename: 'kiwix-macos.dmg',
+          size: 95000000, // Approx
+          releaseDate: new Date().toISOString().split('T')[0],
         },
+        [KIWIX_PLATFORMS.ANDROID]: {
+          version: 'Latest',
+          url: 'https://download.kiwix.org/release/kiwix-android/org.kiwix.kiwixmobile.standalone.apk',
+          filename: 'org.kiwix.kiwixmobile.standalone.apk',
+          size: 45000000, // Approx
+          releaseDate: new Date().toISOString().split('T')[0],
+        }
       };
     } catch (error) {
       console.error('Error fetching Kiwix versions:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Extract ZIP file to destination
+   * @param {string} zipPath - Path to the zip file
+   * @param {string} extractTo - Destination directory
+   */
+  async extractAndSetupPortable(zipPath, extractTo) {
+    try {
+      console.log(`Extracting ${zipPath} to ${extractTo}...`);
+
+      // Ensure destination exists
+      await fs.ensureDir(extractTo);
+
+      // Extract
+      const zip = new AdmZip(zipPath);
+      zip.extractAllTo(extractTo, true); // true = overwrite
+
+      console.log('Extraction complete.');
+
+      // Find the extracted folder (it usually contains a subfolder like kiwix-desktop_windows_x64_...)
+      const files = await fs.readdir(extractTo);
+      const subfolder = files.find(f => {
+        const fullPath = path.join(extractTo, f);
+        return fs.statSync(fullPath).isDirectory() && f.includes('kiwix');
+      });
+
+      if (subfolder) {
+        console.log(`Found Kiwix subfolder: ${subfolder}`);
+      }
+
+      // Note: Launcher creation is handled by PlatformLauncherService
+      // and the bundled asset files, not here
+
+    } catch (error) {
+      console.error('Error during extraction/setup:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Detect installed Kiwix readers on a USB drive
+   * @param {string} usbPath - USB drive path
+   * @returns {Promise<Array>} Array of detected readers
+   */
+  async detectInstalledReaders(usbPath) {
+    try {
+      const readers = [];
+      const kiwixDir = path.join(usbPath, 'kiwix');
+
+      // Check if kiwix directory exists
+      if (!(await fs.pathExists(kiwixDir))) {
+        return readers;
+      }
+
+      // Check each platform directory
+      for (const platform of Object.values(KIWIX_PLATFORMS)) {
+        const platformDir = path.join(kiwixDir, platform);
+
+        if (await fs.pathExists(platformDir)) {
+          // Check for executable files
+          const files = await fs.readdir(platformDir);
+
+          let executable = null;
+          let isPortable = false;
+
+          // Look for executable
+          if (platform === KIWIX_PLATFORMS.WINDOWS) {
+            executable = files.find((f) => f.endsWith('.exe') || f.endsWith('.zip'));
+          } else if (platform === KIWIX_PLATFORMS.LINUX) {
+            executable = files.find((f) => f.endsWith('.appimage'));
+          } else if (platform === KIWIX_PLATFORMS.MAC) {
+            executable = files.find((f) => f.endsWith('.app') || f.endsWith('.dmg'));
+          } else if (platform === KIWIX_PLATFORMS.ANDROID) {
+             executable = files.find((f) => f.endsWith('.apk'));
+          }
+
+          // Check for .portable file
+          if (files.includes('.portable')) {
+            isPortable = true;
+          }
+
+          if (executable) {
+            readers.push({
+              platform,
+              path: platformDir,
+              executable,
+              isPortable,
+              version: 'Unknown', // Would need to parse from filename or read metadata
+            });
+          }
+        }
+      }
+
+      return readers;
+    } catch (error) {
+      console.error('Error detecting installed readers:', error);
       throw error;
     }
   }
@@ -284,12 +430,14 @@ class KiwixManager {
 
   /**
    * Install Kiwix reader to USB drive (uses cache)
-   * @param {string} platform - Platform (windows, linux, mac)
+   * New structure: readers go into .data/ folder (hidden)
+   * @param {string} platform - Platform (windows, linux, macos, android)
    * @param {string} usbPath - USB drive path
    * @param {function} onProgress - Progress callback
+   * @param {string|null} sourcePath - Optional existing local reader file path
    * @returns {Promise<Object>} Installation result
    */
-  async installToUSB(platform, usbPath, onProgress = null) {
+  async installToUSB(platform, usbPath, onProgress = null, sourcePath = null) {
     try {
       console.log(`Installing Kiwix reader for ${platform} to ${usbPath}...`);
 
@@ -300,91 +448,75 @@ class KiwixManager {
         throw new Error(`No version found for platform: ${platform}`);
       }
 
-      // Download (will use cache if available)
-      const downloadResult = await this.downloadReader(platform, null, onProgress);
+      let downloadResult;
+      if (sourcePath && await fs.pathExists(sourcePath)) {
+        console.log(`Using existing reader file for ${platform}: ${sourcePath}`);
+        downloadResult = {
+          success: true,
+          path: sourcePath,
+          fromCache: false
+        };
+      } else {
+        // Download (will use cache if available)
+        downloadResult = await this.downloadReader(platform, null, onProgress);
+      }
 
-      // Create Kiwix directory on USB
-      const kiwixDir = path.join(usbPath, 'kiwix', platform);
-      await fs.ensureDir(kiwixDir);
+      // Create hidden .data directory on USB
+      const dataDir = path.join(usbPath, '.data');
+      await fs.ensureDir(dataDir);
 
-      // Copy from cache to USB
-      const targetPath = path.join(kiwixDir, versionInfo.filename);
-      await fs.copy(downloadResult.path, targetPath);
+      let installPath;
 
-      // Create .portable file for portable mode
-      const portableFile = path.join(kiwixDir, '.portable');
-      await fs.writeFile(portableFile, '');
+      // For Windows, we extract the zip to .data/kiwix-windows/
+      if (platform === KIWIX_PLATFORMS.WINDOWS && versionInfo.filename.endsWith('.zip')) {
+        const winDir = path.join(dataDir, 'kiwix-windows');
+        await fs.ensureDir(winDir);
+        await this.extractAndSetupPortable(downloadResult.path, winDir);
+        installPath = winDir;
 
-      console.log(`Installed Kiwix reader to: ${kiwixDir}`);
+        // Create .portable file for portable mode
+        const portableFile = path.join(winDir, '.portable');
+        await fs.writeFile(portableFile, '');
+
+      } else if (platform === KIWIX_PLATFORMS.LINUX) {
+        // Linux - copy AppImage to root with consistent naming
+        const targetPath = path.join(usbPath, 'START - Linux.AppImage');
+        await fs.copy(downloadResult.path, targetPath);
+        await fs.chmod(targetPath, 0o755);
+        installPath = targetPath;
+        console.log('Made Linux AppImage executable');
+
+      } else if (platform === KIWIX_PLATFORMS.MAC) {
+        // Mac - copy DMG to .data/kiwix-macos.dmg
+        const targetPath = path.join(dataDir, 'kiwix-macos.dmg');
+        await fs.copy(downloadResult.path, targetPath);
+        installPath = targetPath;
+
+      } else if (platform === KIWIX_PLATFORMS.ANDROID) {
+        // Android - copy APK to root (visible for easy access)
+        const targetPath = path.join(usbPath, 'Install on Android.apk');
+        await fs.copy(downloadResult.path, targetPath);
+        installPath = targetPath;
+      }
+
+      // Ensure platform launch scripts exist at USB root.
+      try {
+        await this.platformLauncherService.createAllLaunchers(usbPath);
+      } catch (launcherErr) {
+        console.warn('Failed to create launchers (continuing):', launcherErr.message);
+      }
+
+      console.log(`Installed Kiwix reader to: ${installPath}`);
 
       return {
         success: true,
-        installPath: kiwixDir,
+        installPath,
         version: versionInfo.version,
         platform,
         fromCache: downloadResult.fromCache
       };
     } catch (error) {
       console.error('Error installing Kiwix reader:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Detect installed Kiwix readers on a USB drive
-   * @param {string} usbPath - USB drive path
-   * @returns {Promise<Array>} Array of detected readers
-   */
-  async detectInstalledReaders(usbPath) {
-    try {
-      const readers = [];
-      const kiwixDir = path.join(usbPath, 'kiwix');
-
-      // Check if kiwix directory exists
-      if (!(await fs.pathExists(kiwixDir))) {
-        return readers;
-      }
-
-      // Check each platform directory
-      for (const platform of Object.values(KIWIX_PLATFORMS)) {
-        const platformDir = path.join(kiwixDir, platform);
-
-        if (await fs.pathExists(platformDir)) {
-          // Check for executable files
-          const files = await fs.readdir(platformDir);
-
-          let executable = null;
-          let isPortable = false;
-
-          // Look for executable
-          if (platform === KIWIX_PLATFORMS.WINDOWS) {
-            executable = files.find((f) => f.endsWith('.exe') || f.endsWith('.zip'));
-          } else if (platform === KIWIX_PLATFORMS.LINUX) {
-            executable = files.find((f) => f.endsWith('.appimage'));
-          } else if (platform === KIWIX_PLATFORMS.MAC) {
-            executable = files.find((f) => f.endsWith('.app') || f.endsWith('.dmg'));
-          }
-
-          // Check for .portable file
-          if (files.includes('.portable')) {
-            isPortable = true;
-          }
-
-          if (executable) {
-            readers.push({
-              platform,
-              path: platformDir,
-              executable,
-              isPortable,
-              version: 'Unknown', // Would need to parse from filename or read metadata
-            });
-          }
-        }
-      }
-
-      return readers;
-    } catch (error) {
-      console.error('Error detecting installed readers:', error);
       throw error;
     }
   }

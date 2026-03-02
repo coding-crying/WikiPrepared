@@ -25,6 +25,44 @@ class DownloadManager {
     this.customDownloadDir = null;
   }
 
+  isHttpUrl(url) {
+    return typeof url === 'string' && /^https?:\/\//i.test(url);
+  }
+
+  extractSha256FromText(text) {
+    if (!text) return null;
+    const match = text.toString().match(/[a-fA-F0-9]{64}/);
+    return match ? match[0].toLowerCase() : null;
+  }
+
+  async fetchExpectedSha256ForUrl(url) {
+    if (!this.isHttpUrl(url)) return null;
+
+    const candidates = [
+      `${url}.sha256`,      // commonly `${filename}.zim.sha256`
+      `${url}.sha256sum`,
+      `${url}.sha256.txt`,
+    ];
+
+    for (const checksumUrl of candidates) {
+      try {
+        const response = await axios.get(checksumUrl, {
+          timeout: 20000,
+          responseType: 'text',
+          headers: { 'User-Agent': 'Kiwix-USB-Updater/0.1.0' },
+          validateStatus: (status) => status >= 200 && status < 300,
+        });
+
+        const sha = this.extractSha256FromText(response.data);
+        if (sha) return sha;
+      } catch (e) {
+        // Keep trying other candidates.
+      }
+    }
+
+    return null;
+  }
+
   /**
    * Get the current download directory
    * @returns {string} Download directory path
@@ -63,7 +101,7 @@ class DownloadManager {
       let filesystem = 'unknown';
 
       if (os.platform() === 'win32') {
-        // Windows: use wmic
+        // Windows: use wmic with PowerShell fallback
         const driveLetter = downloadDir.charAt(0).toUpperCase();
         try {
           const result = execSync(`wmic logicaldisk where "DeviceID='${driveLetter}:'" get FileSystem,FreeSpace,Size /format:csv`, { encoding: 'utf8' });
@@ -77,7 +115,18 @@ class DownloadManager {
             }
           }
         } catch (e) {
-          console.warn('Failed to get Windows disk info:', e.message);
+          try {
+            const psResult = execSync(
+              `powershell -NoProfile -Command "(Get-CimInstance Win32_LogicalDisk -Filter \\"DeviceID='${driveLetter}:'\\") | Select-Object FileSystem,FreeSpace,Size | ConvertTo-Json -Compress"`,
+              { encoding: 'utf8' }
+            );
+            const parsed = JSON.parse(psResult.trim());
+            filesystem = parsed?.FileSystem || 'unknown';
+            freeSpace = Number(parsed?.FreeSpace) || 0;
+            totalSpace = Number(parsed?.Size) || 0;
+          } catch (psError) {
+            console.warn('Failed to get Windows disk info:', psError.message);
+          }
         }
       } else {
         // Unix-like: use df
@@ -93,12 +142,18 @@ class DownloadManager {
           }
 
           // Get filesystem type
-          const mountResult = execSync(`df -T "${downloadDir}" 2>/dev/null || df "${downloadDir}"`, { encoding: 'utf8' });
-          const mountLines = mountResult.trim().split('\n');
-          if (mountLines.length >= 2) {
-            const mountParts = mountLines[1].split(/\s+/);
-            if (mountParts.length >= 2) {
-              filesystem = mountParts[1]; // Second column is filesystem type
+          if (os.platform() === 'darwin') {
+            // macOS BSD df has no -T; use stat for filesystem type
+            const statFs = execSync(`stat -f %T "${downloadDir}"`, { encoding: 'utf8' }).trim();
+            if (statFs) filesystem = statFs;
+          } else {
+            const mountResult = execSync(`df -T "${downloadDir}"`, { encoding: 'utf8' });
+            const mountLines = mountResult.trim().split('\n');
+            if (mountLines.length >= 2) {
+              const mountParts = mountLines[1].split(/\s+/);
+              if (mountParts.length >= 2) {
+                filesystem = mountParts[1]; // Second column is filesystem type
+              }
             }
           }
         } catch (e) {
@@ -107,7 +162,7 @@ class DownloadManager {
       }
 
       // Check if filesystem supports large files (>4GB)
-      const supportsLargeFiles = ['ext4', 'ext3', 'xfs', 'btrfs', 'zfs', 'ntfs', 'exfat', 'apfs', 'hfs+'].includes(filesystem.toLowerCase());
+      const supportsLargeFiles = ['ext4', 'ext3', 'xfs', 'btrfs', 'zfs', 'ntfs', 'exfat', 'apfs', 'hfs+', 'hfs', 'hfsplus'].includes(filesystem.toLowerCase());
       const maxFileSize = filesystem.toLowerCase() === 'fat32' ? 4 * 1024 * 1024 * 1024 : Number.MAX_SAFE_INTEGER;
 
       return {
@@ -159,7 +214,7 @@ class DownloadManager {
         dest = isDirectory ? path.join(destination, zimInfo.filename) : destination;
         console.log(`Download destination: ${dest} (directory: ${isDirectory})`);
       } else {
-        dest = path.join(this.defaultDownloadDir, zimInfo.filename);
+        dest = path.join(this.getDownloadDir(), zimInfo.filename);
       }
       
       // Check if file already exists and is complete
@@ -172,10 +227,19 @@ class DownloadManager {
             const stats = await fs.stat(dest);
             // If size matches (fuzzy match for now, ideally checksum)
             if (zimInfo.size && Math.abs(stats.size - zimInfo.size) < 1024) {
-               console.log(`File already exists and size matches: ${zimInfo.filename}. Marking as completed.`);
-               initialStatus = DOWNLOAD_STATUS.COMPLETED;
-               initialProgress = 100;
-               initialDownloaded = stats.size;
+               const isZim = zimInfo.filename?.toLowerCase().endsWith('.zim');
+               if (isZim) {
+                 // Critical safeguard: queued so `startDownload` will run checksum verification before completing.
+                 console.log(`File already exists and size matches: ${zimInfo.filename}. Will verify checksum before completing.`);
+                 initialStatus = DOWNLOAD_STATUS.QUEUED;
+                 initialProgress = 0;
+                 initialDownloaded = stats.size;
+               } else {
+                 console.log(`File already exists and size matches: ${zimInfo.filename}. Marking as completed.`);
+                 initialStatus = DOWNLOAD_STATUS.COMPLETED;
+                 initialProgress = 100;
+                 initialDownloaded = stats.size;
+               }
             }
          }
       } catch (err) {
@@ -236,6 +300,58 @@ class DownloadManager {
     }
 
     try {
+      // If a ZIM already exists at destination with the expected size, verify it instead of downloading again.
+      if (download.filename?.toLowerCase().endsWith('.zim')) {
+        if (await fs.pathExists(download.destination)) {
+          const stats = await fs.stat(download.destination);
+          const expectedSize = download.zimInfo?.size || download.totalSize || 0;
+
+          if (expectedSize > 0 && Math.abs(stats.size - expectedSize) < 1024) {
+            let expectedSha256 = download.zimInfo?.sha256 || null;
+            if (!expectedSha256) {
+              expectedSha256 = await this.fetchExpectedSha256ForUrl(download.url);
+              if (expectedSha256 && download.zimInfo) {
+                download.zimInfo.sha256 = expectedSha256;
+              }
+            }
+
+            if (!expectedSha256) {
+              throw new Error('No SHA-256 checksum available for this ZIM. Refusing to mark download as complete.');
+            }
+
+            try {
+              await fs.writeFile(`${download.destination}.sha256`, `${expectedSha256}  ${download.filename}\n`, 'utf8');
+            } catch (e) {
+              // Non-fatal.
+            }
+
+            download.status = DOWNLOAD_STATUS.VERIFYING;
+            download.startTime = download.startTime || Date.now();
+            download.downloadedSize = stats.size;
+            download.totalSize = expectedSize || stats.size;
+            download.progress = 100;
+            this.emitProgress(downloadId);
+
+            const isValid = await this.verifyDownload(downloadId, expectedSha256);
+            if (!isValid) {
+              // Delete the bad file so a subsequent retry can re-download.
+              try {
+                await fs.remove(download.destination);
+              } catch (e) {
+                // Ignore.
+              }
+              throw new Error('Checksum verification failed');
+            }
+
+            download.status = DOWNLOAD_STATUS.COMPLETED;
+            download.endTime = Date.now();
+            download.progress = 100;
+            this.emitProgress(downloadId);
+            return download;
+          }
+        }
+      }
+
       download.status = DOWNLOAD_STATUS.DOWNLOADING;
       download.startTime = Date.now();
       download.error = null;
@@ -248,7 +364,11 @@ class DownloadManager {
       console.log(`Starting download: ${download.filename}`);
 
       // Ensure destination directory exists
-      await fs.ensureDir(path.dirname(download.destination));
+      // Only try to create if it doesn't exist to avoid EACCES on mount points
+      const dir = path.dirname(download.destination);
+      if (!(await fs.pathExists(dir))) {
+          await fs.ensureDir(dir);
+      }
 
       // Create write stream
       const writer = fs.createWriteStream(download.destination);
@@ -295,21 +415,33 @@ class DownloadManager {
         response.data.on('error', reject);
       });
 
-      // Checksum verification if available
-      if (download.zimInfo && download.zimInfo.sha256) {
+      // Automatic SHA-256 verification for ZIM downloads (critical safeguard).
+      if (download.filename?.toLowerCase().endsWith('.zim')) {
+        let expectedSha256 = download.zimInfo?.sha256 || null;
+        if (!expectedSha256) {
+          expectedSha256 = await this.fetchExpectedSha256ForUrl(download.url);
+          if (expectedSha256 && download.zimInfo) {
+            download.zimInfo.sha256 = expectedSha256;
+          }
+        }
+
+        if (!expectedSha256) {
+          throw new Error('No SHA-256 checksum available for this ZIM. Refusing to mark download as complete.');
+        }
+
+        // Persist expected checksum alongside the downloaded file for later USB verification.
+        try {
+          await fs.writeFile(`${download.destination}.sha256`, `${expectedSha256}  ${download.filename}\n`, 'utf8');
+        } catch (e) {
+          // Non-fatal.
+        }
+
         download.status = DOWNLOAD_STATUS.VERIFYING;
         this.emitProgress(downloadId);
-        
-        try {
-          const isValid = await this.verifyDownload(downloadId, download.zimInfo.sha256);
-          if (!isValid) {
-             throw new Error('Checksum verification failed');
-          }
-        } catch (verifyErr) {
-           console.error(`Verification failed for ${download.filename}:`, verifyErr);
-           // Depending on strictness, we might want to fail the download or just warn.
-           // For now, let's treat it as an error to be safe.
-           throw verifyErr; 
+
+        const isValid = await this.verifyDownload(downloadId, expectedSha256);
+        if (!isValid) {
+          throw new Error('Checksum verification failed');
         }
       }
 
@@ -669,8 +801,21 @@ class DownloadManager {
         return new Promise((resolve, reject) => {
             const hash = crypto.createHash('sha256');
             const stream = fs.createReadStream(download.destination);
+            let verifiedBytes = 0;
+            let lastEmit = Date.now();
             
-            stream.on('data', (data) => hash.update(data));
+            stream.on('data', (data) => {
+              hash.update(data);
+              verifiedBytes += data.length;
+
+              // Emit occasional progress updates so the UI stays alive.
+              if (Date.now() - lastEmit > 1000) {
+                lastEmit = Date.now();
+                download.status = DOWNLOAD_STATUS.VERIFYING;
+                // Keep downloadedSize/progress intact; renderer treats VERIFYING as indeterminate.
+                this.emitProgress(downloadId);
+              }
+            });
             stream.on('end', () => {
                 const fileHash = hash.digest('hex');
                 console.log(`Checksum result for ${download.filename}: ${fileHash} (expected ${expectedChecksum})`);

@@ -1,206 +1,131 @@
-# Kiwix USB Updater
+# WikiPrepared
 
-A cross-platform desktop application for managing Kiwix reader installations and Wikipedia ZIM files on USB drives.
+WikiPrepared is a cross-platform desktop app for building and maintaining offline Wikipedia USB drives.
 
-## Overview
+Its goal is to support long-term knowledge preservation and give people, schools, and communities more control over their own knowledge repositories instead of depending on always-online access.
 
-Kiwix USB Updater simplifies the process of creating and maintaining offline Wikipedia USB drives. With an intuitive interface, users can:
+## What WikiPrepared does
 
-- **Flash USB drives** with Kiwix reader software for Windows, Linux, and Mac
-- **Browse and download** Wikipedia ZIM files filtered by language and size
-- **Check for updates** to existing ZIM files on USB drives
-- **Manage content** with easy-to-use download and installation tools
+- Detects removable USB drives and shows capacity, free space, and filesystem details.
+- Warns about filesystem limits (for example FAT32 and 4GB file limits) before large transfers.
+- Fetches and parses Wikipedia ZIM catalogs from Wikimedia/Kiwix dumps.
+- Filters ZIM content by language, topic, and scope (`mini`, `nopic`, `maxi`).
+- Downloads ZIM files with queueing, progress, pause/resume/cancel, and basic checksum support.
+- Scans existing USB sticks for installed `.zim` files and checks for update candidates.
+- Downloads and installs Kiwix readers for Windows, Linux, macOS, and Android.
+- Creates portable USB launchers (`START - Windows.bat`, `START - Mac.command`, `START - Linux.sh`).
 
-## Features
+## Why this project exists
 
-### Core Functionality
-- 🔌 **Auto-detect USB drives** connected to your system
-- 📚 **Browse Wikipedia ZIMs** from dumps.wikimedia.org with filters for:
-  - Language (English, Spanish, French, German, etc.)
-  - Size/Scope (Mini, NoPic, Maxi)
-  - Topic (All, Computer, Geography, etc.)
-- ⬇️ **Download manager** with progress tracking, pause/resume, and checksum verification
-- 🔄 **Update detection** - scan USB drives and find newer versions of installed ZIMs
-- 💻 **Kiwix reader installation** - automatically install portable Kiwix readers
-- ✅ **Safe operations** - validates USB drives and prevents accidental data loss
+Knowledge access is fragile when it depends on stable internet, centralized platforms, and changing policies.
 
-### User Interface
-- Clean, modern interface built with Material-UI
-- Real-time progress tracking for downloads and file operations
-- Filter and search capabilities for finding specific content
-- Batch operations for updating multiple ZIMs at once
+WikiPrepared is designed to help users:
 
-## Technology Stack
+- Preserve critical knowledge offline.
+- Share reproducible knowledge kits across devices and regions.
+- Keep local ownership of educational content and update schedules.
 
-- **Electron** - Cross-platform desktop framework
-- **React** - UI component library
-- **Node.js** - Backend operations
-- **Material-UI** - Component framework
+## Current app flow
 
-## Prerequisites
+The current React/Electron flow is step-based:
 
-- Node.js 18+ LTS
-- npm or yarn
-- Administrator/root access for USB operations (on some systems)
+1. Initial choice (`update existing` vs `create new`).
+2. Drive selection.
+3. Filesystem warning (if needed).
+4. Content and reader configuration.
+5. Download strategy selection (`direct to USB` or `local-first`).
+6. Download progress.
+7. USB transfer progress.
+8. Completion + safe eject options.
 
-## Installation
+Main routes are defined in `src/renderer/App.jsx` and `src/renderer/utils/constants.js`.
 
-### Development Setup
+## Tech stack
+
+- Electron (main process + packaging)
+- React + MUI (renderer UI)
+- Node.js services/managers for drives, files, downloads, and Kiwix integration
+- `drivelist`, `axios`, `fs-extra`, `cheerio`, `zustand`
+
+## Development setup
+
+### Prerequisites
+
+- Node.js 18+
+- npm 9+
+- Git
+- Platform permissions for removable drive operations
+
+### Install and run
 
 ```bash
-# Clone the repository
-git clone https://github.com/yourusername/kiwix-usb-updater.git
-cd kiwix-usb-updater
-
-# Install dependencies
+git clone https://github.com/coding-crying/WikiPrepared.git
+cd WikiPrepared
 npm install
-
-# Start development server
 npm run dev
 ```
 
-### Building from Source
+## Scripts
 
 ```bash
-# Build for current platform
-npm run build
-
-# Platform-specific builds
-npm run build:win      # Windows
-npm run build:linux    # Linux (AppImage, .deb)
-npm run build:mac      # macOS (.dmg)
+npm run dev         # Start Electron app in development
+npm run build       # Build/package for current platform
+npm run build:win   # Build for Windows
+npm run build:linux # Build for Linux
+npm run build:mac   # Build for macOS
+npm run lint        # Lint source
+npm test            # Run tests
 ```
 
-## Usage
+## USB output structure (portable mode)
 
-### 1. Connect USB Drive
-- Plug in your USB drive
-- The application will auto-detect it and display drive information
+WikiPrepared targets a simple USB layout:
 
-### 2. Install Kiwix Reader (Optional)
-- Go to the "Kiwix Reader" tab
-- Select platforms (Windows/Linux/Mac)
-- Click "Install to USB"
+- `Library/` for `.zim` content
+- `.data/` for reader binaries/assets
+- root launchers for each desktop platform
 
-### 3. Browse and Download ZIM Files
-- Navigate to "ZIM Browser" tab
-- Filter by language, size, or topic
-- Click "Download" or "Install to USB" on desired ZIM files
-- Monitor progress in the download queue
+User-facing USB guidance is in `src/main/assets/README.txt`.
 
-### 4. Check for Updates
-- Go to "Update Manager" tab
-- Click "Scan USB" to detect installed ZIMs
-- Review available updates
-- Select and update ZIMs as needed
+## Repository layout
 
-## Project Structure
+- `src/main/` Electron main process, IPC handlers, managers, services
+- `src/renderer/` React UI screens, components, stores, styles
+- `src/shared/` cross-process constants and IPC channel definitions
+- `docs/` implementation notes, redesign docs, troubleshooting
+- `tools/offline_ai/` optional local AI experimentation utilities for ZIM question-answering
 
-```
-kiwix-usb-updater/
-├── src/
-│   ├── main/              # Electron main process
-│   │   ├── managers/      # Core business logic
-│   │   ├── services/      # Helper services
-│   │   └── utils/         # Utilities
-│   ├── renderer/          # React UI
-│   │   ├── components/    # React components
-│   │   ├── views/         # Page views
-│   │   └── store/         # State management
-│   └── shared/            # Shared code
-├── public/                # Static assets
-├── tests/                 # Test files
-├── FEATURES.md            # Detailed feature specifications
-├── ARCHITECTURE.md        # Technical architecture documentation
-└── README.md              # This file
-```
+## Documentation map
 
-## Documentation
+- `GETTING_STARTED.md` - developer setup walkthrough
+- `ARCHITECTURE.md` - architecture details
+- `FEATURES.md` - feature inventory and roadmap notes
+- `docs/UI_FLOW_REDESIGN.md` - detailed UX flow specification
+- `docs/LOCAL_TESTING_REPORT.md` - test observations from prior runs
 
-- [Features](FEATURES.md) - Comprehensive feature set and requirements
-- [Architecture](ARCHITECTURE.md) - Technical architecture and implementation details
+## Status
 
-## Development Roadmap
+This project is actively evolving. The architecture and UI flow are in place, and the core USB + ZIM workflow is implemented, but polish/testing depth still varies by platform.
 
-- [x] Requirements gathering and planning
-- [x] Feature set definition
-- [x] Architecture design
-- [ ] Sprint 1: Foundation (Electron + React setup, USB detection)
-- [ ] Sprint 2: ZIM Catalog (Browse and download functionality)
-- [ ] Sprint 3: Update Detection (Scan and compare versions)
-- [ ] Sprint 4: Kiwix Reader Installation
-- [ ] Sprint 5: Polish (Error handling, UI/UX improvements)
-- [ ] Sprint 6: Testing & Distribution (Cross-platform testing, packaging)
+If you are contributing, prioritize:
+
+- cross-platform USB reliability
+- clearer failure recovery and retries
+- end-to-end tests for download/transfer/update flows
+
+## Data sources and dependencies
+
+- Wikipedia/Kiwix ZIM dumps: `https://dumps.wikimedia.org/other/kiwix/zim/wikipedia/`
+- Kiwix downloads: `https://download.kiwix.org/release/`
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+Contributions are welcome.
 
-### Development Guidelines
-
-1. Follow the existing code style
-2. Write tests for new features
-3. Update documentation as needed
-4. Test on multiple platforms before submitting PR
-
-## Data Sources
-
-- **ZIM Files**: https://dumps.wikimedia.org/other/kiwix/zim/wikipedia/
-- **Kiwix Readers**: https://www.kiwix.org/en/download/
+1. Open an issue describing the problem or proposal.
+2. Keep changes scoped and test the affected flow.
+3. Update docs when behavior changes.
 
 ## License
 
-This project is licensed under the GNU General Public License v3.0 - see the LICENSE file for details.
-
-## Acknowledgments
-
-- [Kiwix](https://www.kiwix.org/) - For creating amazing offline content readers
-- [Wikimedia Foundation](https://www.wikimedia.org/) - For hosting ZIM file dumps
-- [Electron](https://www.electronjs.org/) - For the cross-platform framework
-
-## Support
-
-For issues, questions, or suggestions, please open an issue on GitHub.
-
-## FAQ
-
-**Q: Why do I need administrator/root access?**
-A: Some USB write operations require elevated privileges on certain operating systems. The app will prompt you when needed.
-
-**Q: How much space do I need on my USB drive?**
-A: It depends on which ZIMs you choose:
-- Mini editions: 100MB - 1GB
-- NoPic editions: 5GB - 20GB
-- Maxi editions: 50GB - 90GB
-
-**Q: Can I use this on multiple USB drives?**
-A: Yes! The application supports managing multiple USB drives simultaneously.
-
-**Q: Are downloads resumable if interrupted?**
-A: Yes, the download manager supports pause/resume functionality.
-
-**Q: How do I know if my ZIM files are up to date?**
-A: Use the "Update Manager" tab to scan your USB drive and check for available updates.
-
-## Troubleshooting
-
-### USB drive not detected
-- Ensure the drive is properly connected
-- Try unplugging and reconnecting
-- Check if the drive is mounted (Linux/Mac)
-- Run the application with administrator privileges
-
-### Downloads failing
-- Check your internet connection
-- Verify you have sufficient disk space
-- Check firewall settings
-- Try downloading to a different location
-
-### Application won't start
-- Ensure Node.js 18+ is installed
-- Delete `node_modules` and run `npm install` again
-- Check console for error messages
-
----
-
-**Note**: This application is currently in development. Features and documentation are subject to change.
+GPL-3.0. See `LICENSE`.

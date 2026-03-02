@@ -149,6 +149,7 @@ export default function DownloadProgressScreen() {
   const [downloadProgress, setDownloadProgress] = useState({});
   const [isPaused, setIsPaused] = useState(false);
   const [downloadLocation, setDownloadLocation] = useState(null);
+  const [kiwixVersions, setKiwixVersions] = useState({});
   
   // Ref to prevent double-start in StrictMode
   const hasStartedRef = React.useRef(false);
@@ -165,12 +166,28 @@ export default function DownloadProgressScreen() {
 
   // Check for completion whenever download progress changes
   const checkCompletion = useCallback(() => {
-    if (selectedZims.length === 0) return false;
-    return selectedZims.every(zim => {
-      const status = downloadProgress[zim.filename]?.status;
-      return status === 'completed';
+    // Check ZIMs
+    const zimsComplete = selectedZims.every(zim => {
+        // Skip check if ZIM has no URL (skipped download)
+        if (!zim.url) return true;
+        const status = downloadProgress[zim.filename]?.status;
+        return status === 'completed';
     });
-  }, [selectedZims, downloadProgress]);
+
+    // Check Readers
+    // We need to know the filenames to check status. 
+    // If kiwixVersions is not loaded yet, we can't fully check, but that's fine for initial renders.
+    const readersComplete = selectedReaders.every(platform => {
+         const versionInfo = kiwixVersions[platform];
+         // If we don't have version info yet, assume not complete (unless selectedReaders is empty)
+         if (!versionInfo) return false;
+         
+         const status = downloadProgress[versionInfo.filename]?.status;
+         return status === 'completed';
+    });
+
+    return zimsComplete && readersComplete;
+  }, [selectedZims, selectedReaders, downloadProgress, kiwixVersions]);
 
   const isAllCompleted = checkCompletion();
 
@@ -216,24 +233,28 @@ export default function DownloadProgressScreen() {
     const downloads = Object.values(downloadProgress);
     if (downloads.length === 0) return 0;
 
-    // Calculate weighted progress based on file sizes
-    const totalSize = selectedZims.reduce((sum, zim) => sum + (zim.size || 0), 0);
-    if (totalSize === 0) {
-      // Fallback to simple average if sizes unknown
-      const totalProgress = downloads.reduce((sum, d) => sum + (d.progress || 0), 0);
-      return totalProgress / Math.max(selectedZims.length, 1);
-    }
+    // Calculate total size
+    const totalZimSize = selectedZims.reduce((sum, zim) => sum + (zim.size || 0), 0);
+    
+    // Estimate reader size if not known (250MB safe default)
+    const readerSize = selectedReaders.reduce((sum, platform) => {
+        const info = kiwixVersions[platform];
+        return sum + (info?.size || 250 * 1024 * 1024);
+    }, 0);
 
-    let weightedProgress = 0;
-    for (const zim of selectedZims) {
-      const progress = downloadProgress[zim.filename];
-      const zimProgress = progress?.status === 'completed' ? 100 : (progress?.progress || 0);
-      const weight = (zim.size || 0) / totalSize;
-      weightedProgress += zimProgress * weight;
-    }
+    const totalSize = totalZimSize + readerSize;
 
-    return weightedProgress;
-  }, [downloadProgress, selectedZims]);
+    if (totalSize === 0) return 0;
+
+    let totalDownloaded = 0;
+    
+    // Sum downloaded bytes
+    downloads.forEach(d => {
+        totalDownloaded += (d.downloadedSize || 0);
+    });
+
+    return Math.min(100, (totalDownloaded / totalSize) * 100);
+  }, [downloadProgress, selectedZims, selectedReaders, kiwixVersions]);
 
   const handleDownloadError = useCallback((error) => {
     console.error('Download error:', error);
@@ -259,8 +280,18 @@ export default function DownloadProgressScreen() {
     };
     fetchDownloadLocation();
 
-    // Start downloads
-    startDownloads();
+    // Fetch Kiwix versions for UI mapping AND THEN start downloads
+    const init = async () => {
+        try {
+            const versions = await window.electronAPI.invoke('kiwix:get-versions');
+            setKiwixVersions(versions);
+            // Pass versions to startDownloads to avoid race condition with state update
+            startDownloads(versions);
+        } catch (err) {
+            console.error('Failed to init downloads:', err);
+        }
+    };
+    init();
 
     // Listen for download progress
     const unsubProgress = window.electronAPI.on('download:progress', handleDownloadProgress);
@@ -307,25 +338,92 @@ export default function DownloadProgressScreen() {
     return () => clearInterval(intervalId);
   }, []);
 
-  const startDownloads = async () => {
+  const startDownloads = async (versions = kiwixVersions) => {
     try {
-      // Determine destination
-      const destination = downloadStrategy === DOWNLOAD_STRATEGIES.DIRECT_TO_USB
+      const joinPathForTarget = (basePath, child) => {
+        if (!basePath) return null;
+        const normalized = basePath.replace(/[\\/]+$/, '');
+        // Preserve Windows-style separators when mount paths are drive-letter based.
+        const sep = /^[A-Za-z]:\\/.test(normalized) ? '\\' : '/';
+        return `${normalized}${sep}${child}`;
+      };
+
+      // Determine destination - USB root for readers, Library subfolder for ZIMs
+      const usbRoot = downloadStrategy === DOWNLOAD_STRATEGIES.DIRECT_TO_USB
         ? selectedDrive?.mountpoints?.[0]?.path
         : null;
+      const destination = usbRoot; // For readers (handled by installToUSB -> .data/)
+      const zimDestination = joinPathForTarget(usbRoot, 'Library'); // For ZIMs
 
       let instantCompleteCount = 0;
+      const totalItems = selectedReaders.length + selectedZims.length;
 
-      // Mock complete readers since we don't download them yet
-      // This prevents them from looking "stuck" in the UI
-      for (const reader of selectedReaders) {
-         // Use a special key for readers in progress map? 
-         // DownloadItem uses `Kiwix Reader (${platform})` as filename
-         const key = `Kiwix Reader (${reader})`;
-         setDownloadProgress(prev => ({
-            ...prev,
-            [key]: { status: 'completed', progress: 100 }
-         }));
+      // Fetch Kiwix reader versions
+      let kiwixVersions = {};
+      try {
+        kiwixVersions = await window.electronAPI.invoke('kiwix:get-versions');
+      } catch (err) {
+        console.error('Failed to fetch Kiwix versions:', err);
+      }
+
+      console.log('DEBUG: selectedReaders:', selectedReaders);
+      console.log('DEBUG: kiwixVersions keys:', Object.keys(kiwixVersions));
+
+      // Queue Kiwix Readers
+      for (const platform of selectedReaders) {
+         const versionInfo = versions[platform];
+         if (versionInfo && versionInfo.url) {
+             // For direct-to-USB, install readers to platform-specific USB locations (.data/, extracted Windows)
+             if (downloadStrategy === DOWNLOAD_STRATEGIES.DIRECT_TO_USB && usbRoot) {
+               setDownloadProgress(prev => ({
+                 ...prev,
+                 [versionInfo.filename]: {
+                   status: 'downloading',
+                   progress: 0,
+                   downloadedSize: 0,
+                   totalSize: versionInfo.size || 0
+                 }
+               }));
+
+               await window.electronAPI.invoke('kiwix:install', platform, usbRoot);
+               instantCompleteCount++;
+               setDownloadProgress(prev => ({
+                 ...prev,
+                 [versionInfo.filename]: {
+                   status: 'completed',
+                   progress: 100,
+                   downloadedSize: versionInfo.size || 0,
+                   totalSize: versionInfo.size || 0
+                 }
+               }));
+             } else {
+               // Local-first and no-drive flows still use DownloadManager queue
+               const result = await window.electronAPI.invoke('download:add', {
+                   url: versionInfo.url,
+                   filename: versionInfo.filename,
+                   size: versionInfo.size
+               }, destination);
+               
+               // If backend reports it's already completed (cached), update UI immediately
+               if (result.status === 'completed') {
+                    console.log(`Reader already completed (cached): ${versionInfo.filename}`);
+                    instantCompleteCount++;
+                    setDownloadProgress(prev => ({
+                      ...prev,
+                      [versionInfo.filename]: { 
+                          status: 'completed',
+                          progress: 100,
+                          downloadedSize: versionInfo.size,
+                          totalSize: versionInfo.size
+                      }
+                    }));
+               }
+             }
+         } else {
+             console.warn(`No version info found for reader: ${platform}`);
+             // Treat missing version info as "skipped/complete" to avoid blocking
+             instantCompleteCount++;
+         }
       }
 
       // Queue ZIM downloads
@@ -350,7 +448,7 @@ export default function DownloadProgressScreen() {
           url: zim.url,
           filename: zim.filename,
           size: zim.size
-        }, destination);
+        }, zimDestination);
 
         // If backend reports it's already completed (found locally), update UI immediately
         if (result.status === 'completed') {
@@ -372,7 +470,7 @@ export default function DownloadProgressScreen() {
       await window.electronAPI.invoke('download:start-all');
 
       // Fast-path: If everything was instantly completed/skipped, navigate now
-      if (instantCompleteCount === selectedZims.length) {
+      if (instantCompleteCount === totalItems && totalItems > 0) {
         console.log('All items instantly complete. Navigating via fast-path...');
         performNavigation();
       }
@@ -513,18 +611,24 @@ export default function DownloadProgressScreen() {
               );
             })}
 
-            {selectedReaders.map((platform) => (
-              <DownloadItem
-                key={platform}
-                filename={`Kiwix Reader (${platform})`}
-                status="queued"
-                progress={0}
-                downloadedSize={0}
-                totalSize={0}
-                speed={0}
-                eta={0}
-              />
-            ))}
+            {selectedReaders.map((platform) => {
+              const versionInfo = kiwixVersions[platform];
+              const filename = versionInfo?.filename || `Kiwix Reader (${platform})`; // Fallback
+              const progress = downloadProgress[filename] || {};
+              
+              return (
+                <DownloadItem
+                  key={platform}
+                  filename={filename} // Show actual filename
+                  status={progress.status || 'queued'}
+                  progress={progress.progress || 0}
+                  downloadedSize={progress.downloadedSize || 0}
+                  totalSize={progress.totalSize || versionInfo?.size || 0}
+                  speed={progress.speed || 0}
+                  eta={progress.eta || 0}
+                />
+              );
+            })}
           </Box>
         </Paper>
 

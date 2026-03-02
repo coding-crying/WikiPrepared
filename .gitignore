@@ -7,6 +7,12 @@ yarn.lock
 dist/
 out/
 .webpack/
+build/
+
+# Local working folders / large generated artifacts (do not commit)
+Files Important/
+tools/offline_ai/build_gui_temp/
+Gemini_Generated_Image_*.png
 
 # Electron
 *.log

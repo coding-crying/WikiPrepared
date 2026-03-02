@@ -6,32 +6,32 @@ import { PLATFORMS, READER_SIZES } from '../../utils/constants';
 import { formatBytes } from '../../utils/formatters';
 
 /**
- * Platform tile component
+ * Platform tile component - Compact version
  */
 function PlatformTile({ platform, label, icon: Icon, size, isSelected, onToggle, isCached }) {
   return (
     <Card
       sx={{
-        bgcolor: isSelected ? 'rgba(255, 255, 255, 0.1)' : 'background.paper',
-        border: '2px solid',
+        bgcolor: isSelected ? 'rgba(76, 175, 80, 0.1)' : 'background.paper',
+        border: '1.5px solid',
         borderColor: isSelected ? 'success.main' : 'divider',
         transition: 'all 0.2s ease',
         position: 'relative',
         '&:hover': {
           borderColor: isSelected ? 'success.main' : 'rgba(255, 255, 255, 0.3)',
-          transform: 'translateY(-2px)'
+          transform: 'translateY(-1px)'
         }
       }}
     >
-      <CardActionArea onClick={onToggle} sx={{ p: 2, textAlign: 'center' }}>
+      <CardActionArea onClick={onToggle} sx={{ p: 1.5, textAlign: 'center' }}>
         {/* Selected indicator */}
         {isSelected && (
           <CheckIcon
             sx={{
               position: 'absolute',
-              top: 8,
-              right: 8,
-              fontSize: 20,
+              top: 6,
+              right: 6,
+              fontSize: 16,
               color: 'success.main'
             }}
           />
@@ -42,26 +42,26 @@ function PlatformTile({ platform, label, icon: Icon, size, isSelected, onToggle,
           <CachedIcon
             sx={{
               position: 'absolute',
-              top: 8,
-              right: 8,
-              fontSize: 16,
+              top: 6,
+              right: 6,
+              fontSize: 14,
               color: 'info.main'
             }}
           />
         )}
 
         {/* Platform icon */}
-        <Box sx={{ fontSize: 36, color: isSelected ? 'text.primary' : 'text.secondary', mb: 1 }}>
+        <Box sx={{ fontSize: 28, color: isSelected ? 'text.primary' : 'text.secondary', mb: 0.5 }}>
           <Icon />
         </Box>
 
         {/* Platform name */}
-        <Typography variant="subtitle2" fontWeight={600}>
+        <Typography variant="body2" fontWeight={600}>
           {label}
         </Typography>
 
         {/* Size and cache status */}
-        <Typography variant="caption" color="text.secondary">
+        <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
           {formatBytes(size)}
           {isCached && (
             <Chip
@@ -69,8 +69,8 @@ function PlatformTile({ platform, label, icon: Icon, size, isSelected, onToggle,
               size="small"
               sx={{
                 ml: 0.5,
-                height: 16,
-                fontSize: '0.6rem',
+                height: 14,
+                fontSize: '0.55rem',
                 bgcolor: 'info.dark'
               }}
             />
@@ -129,15 +129,8 @@ export default function ReaderSelector({ selectedReaders, onToggle }) {
 
   return (
     <Box>
-      <Typography variant="subtitle1" fontWeight={600} gutterBottom>
-        Kiwix Reader Apps
-      </Typography>
-      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
-        Include reader apps for these platforms
-      </Typography>
-
-      {/* Platform tiles grid */}
-      <Grid container spacing={1.5}>
+      {/* Platform tiles grid - Compact 4 columns */}
+      <Grid container spacing={1}>
         {platforms.map((platform) => (
           <Grid item xs={6} sm={3} key={platform.id}>
             <PlatformTile
@@ -153,14 +146,14 @@ export default function ReaderSelector({ selectedReaders, onToggle }) {
         ))}
       </Grid>
 
-      {/* iOS and PWA info - prominent cards */}
-      <Box sx={{ mt: 3, p: 2, bgcolor: 'action.hover', borderRadius: 2 }}>
-        <Typography variant="subtitle2" fontWeight={600} gutterBottom>
-          Other Platforms
+      {/* iOS and PWA info - Compact cards with caveats */}
+      <Box sx={{ mt: 2, p: 1.5, bgcolor: 'rgba(255,255,255,0.02)', borderRadius: 1, border: '1px solid', borderColor: 'divider' }}>
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1, fontWeight: 600 }}>
+          Other Platforms (not downloaded)
         </Typography>
 
-        <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-          {/* iOS Card */}
+        <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap' }}>
+          {/* iOS Card - Compact */}
           <Box
             component="a"
             href="https://apps.apple.com/app/kiwix/id997079563"
@@ -168,10 +161,10 @@ export default function ReaderSelector({ selectedReaders, onToggle }) {
             rel="noopener"
             sx={{
               flex: 1,
-              minWidth: 140,
-              p: 1.5,
+              minWidth: 120,
+              p: 1,
               bgcolor: 'background.paper',
-              borderRadius: 1,
+              borderRadius: 0.5,
               border: '1px solid',
               borderColor: 'divider',
               textDecoration: 'none',
@@ -186,14 +179,16 @@ export default function ReaderSelector({ selectedReaders, onToggle }) {
               }
             }}
           >
-            <FaApple style={{ fontSize: 24, color: '#999' }} />
+            <FaApple style={{ fontSize: 20, color: '#999' }} />
             <Box>
-              <Typography variant="body2" fontWeight={600}>iOS / iPadOS</Typography>
-              <Typography variant="caption" color="text.secondary">App Store</Typography>
+              <Typography variant="caption" fontWeight={600}>iOS / iPadOS</Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.65rem' }}>
+                App Store only
+              </Typography>
             </Box>
           </Box>
 
-          {/* PWA Card */}
+          {/* PWA Card - Compact */}
           <Box
             component="a"
             href="https://pwa.kiwix.org"
@@ -201,10 +196,10 @@ export default function ReaderSelector({ selectedReaders, onToggle }) {
             rel="noopener"
             sx={{
               flex: 1,
-              minWidth: 140,
-              p: 1.5,
+              minWidth: 120,
+              p: 1,
               bgcolor: 'background.paper',
-              borderRadius: 1,
+              borderRadius: 0.5,
               border: '1px solid',
               borderColor: 'divider',
               textDecoration: 'none',
@@ -219,17 +214,15 @@ export default function ReaderSelector({ selectedReaders, onToggle }) {
               }
             }}
           >
-            <Box sx={{ fontSize: 24, color: '#999' }}>🌐</Box>
+            <Box sx={{ fontSize: 20, color: '#999' }}>🌐</Box>
             <Box>
-              <Typography variant="body2" fontWeight={600}>Web Browser</Typography>
-              <Typography variant="caption" color="text.secondary">pwa.kiwix.org</Typography>
+              <Typography variant="caption" fontWeight={600}>Web Browser</Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.65rem' }}>
+                pwa.kiwix.org
+              </Typography>
             </Box>
           </Box>
         </Box>
-
-        <Typography variant="caption" color="text.secondary" sx={{ mt: 1.5, display: 'block' }}>
-          These options don't require downloading - users can access Kiwix directly from their device's app store or any modern web browser.
-        </Typography>
       </Box>
     </Box>
   );

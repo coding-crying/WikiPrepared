@@ -88,10 +88,10 @@ export default function DriveSelectionScreen() {
           }}
         >
           <CircularProgress size={60} />
-          <Typography variant="h6" sx={{ mt: 3 }}>
+          <Typography variant="h5" sx={{ mt: 3, fontWeight: 500 }}>
             Scanning for USB drives...
           </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+          <Typography variant="body1" color="text.secondary" sx={{ mt: 1.5, fontSize: '1.05rem' }}>
             Please wait while we detect connected drives
           </Typography>
         </Box>
@@ -114,35 +114,35 @@ export default function DriveSelectionScreen() {
             flex: 1
           }}
         >
-          <UsbOffIcon sx={{ fontSize: '4rem', mb: 2, color: 'text.secondary' }} />
-          <Typography variant="h6" gutterBottom>
+          <UsbOffIcon sx={{ fontSize: '4.5rem', mb: 3, color: 'text.secondary' }} />
+          <Typography variant="h5" gutterBottom sx={{ fontWeight: 500 }}>
             No USB drives detected
           </Typography>
-          <Typography variant="body1" color="text.secondary" sx={{ mb: 4 }}>
+          <Typography variant="body1" color="text.secondary" sx={{ mb: 4, fontSize: '1.05rem', lineHeight: 1.6 }}>
             Please insert a USB drive with at least 64GB of free space
           </Typography>
 
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
             <CircularProgress size={24} />
-            <Typography variant="body2" color="text.secondary">
+            <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.95rem' }}>
               Scanning for drives...
             </Typography>
           </Box>
 
           {/* Download to Computer link */}
-          <Box sx={{ mt: 4, textAlign: 'center' }}>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+          <Box sx={{ mt: 5, textAlign: 'center' }}>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5, fontSize: '0.95rem' }}>
               Don't have a USB drive handy?
             </Typography>
             <Button
               variant="text"
-              size="small"
+              size="medium"
               startIcon={<ComputerIcon />}
               onClick={() => {
                 handleSelectLocalDownload();
                 navigate(ROUTES.CONFIGURE);
               }}
-              sx={{ color: 'text.secondary', textTransform: 'none' }}
+              sx={{ color: 'text.secondary', textTransform: 'none', fontSize: '0.95rem' }}
             >
               Download to computer instead
             </Button>
@@ -177,23 +177,24 @@ export default function DriveSelectionScreen() {
 
           {/* Download to Computer link - less prominent */}
           <Box sx={{ mt: 3, pt: 2, borderTop: '1px solid', borderColor: 'divider', textAlign: 'center' }}>
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+            <Typography variant="body2" color="text.secondary" sx={{ display: 'block', mb: 1, fontSize: '0.95rem' }}>
               Don't want to use a USB drive?
             </Typography>
             <Button
               variant="text"
-              size="small"
-              startIcon={<ComputerIcon sx={{ fontSize: 18 }} />}
+              size="medium"
+              startIcon={<ComputerIcon sx={{ fontSize: 20 }} />}
               onClick={handleSelectLocalDownload}
               sx={{
                 color: localDownloadSelected ? 'primary.main' : 'text.secondary',
                 textTransform: 'none',
-                fontWeight: localDownloadSelected ? 600 : 400
+                fontWeight: localDownloadSelected ? 600 : 400,
+                fontSize: '0.95rem'
               }}
             >
               Download to computer instead
               {localDownloadSelected && (
-                <CheckIcon sx={{ ml: 1, fontSize: 16, color: 'primary.main' }} />
+                <CheckIcon sx={{ ml: 1, fontSize: 18, color: 'primary.main' }} />
               )}
             </Button>
           </Box>

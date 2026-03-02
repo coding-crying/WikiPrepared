@@ -129,7 +129,19 @@ export const useDrivesStore = create(
 
       // Get USB drives only
       getUsbDrives: () => {
-        return get().drives.filter(d => d.isUSB);
+        return get().drives.filter((d) => {
+          const mountpoint = d.mountpoints?.[0]?.path || d.mountpoint;
+          const hasValidMount = mountpoint && !mountpoint.includes('[') && mountpoint !== '/';
+          const busType = (d.busType || '').toString().toLowerCase();
+          const looksLikeRemovableMount =
+            mountpoint.startsWith('/run/media/') ||
+            mountpoint.startsWith('/media/') ||
+            /^[A-Za-z]:/.test(mountpoint);
+
+          return hasValidMount &&
+            !d.isSystem &&
+            (d.isUSB || d.isRemovable || busType === 'usb' || looksLikeRemovableMount);
+        });
       },
 
       // Check if drive supports large files (case insensitive)

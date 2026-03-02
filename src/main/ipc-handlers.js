@@ -324,7 +324,7 @@ function setupIpcHandlers() {
   // Transfer Handlers (Local to USB)
   // ========================================
 
-  ipcMain.handle(IPC_CHANNELS.TRANSFER_START, async (event, { destination, filesToTransfer }) => {
+  ipcMain.handle(IPC_CHANNELS.TRANSFER_START, async (event, { destination, filesToTransfer, selectedReaders = [] }) => {
     try {
       const fs = require('fs-extra');
       const downloadDir = downloadManager.getDownloadDir();
@@ -351,13 +351,18 @@ function setupIpcHandlers() {
       // Calculate total size
       let totalSize = 0;
       const fileInfos = [];
+
+      // Ensure Library folder exists
+      const libraryDir = path.join(destination, 'Library');
+      await fs.ensureDir(libraryDir);
+
       for (const file of zimFiles) {
         const sourcePath = path.join(downloadDir, file);
         const stats = await fs.stat(sourcePath);
         fileInfos.push({
           name: file,
           sourcePath,
-          destinationPath: path.join(destination, file),
+          destinationPath: path.join(libraryDir, file),
           size: stats.size
         });
         totalSize += stats.size;
@@ -383,51 +388,96 @@ function setupIpcHandlers() {
           });
         });
 
-        try {
-          // Check if file already exists
-          const destExists = await fs.pathExists(fileInfo.destinationPath);
-          if (destExists) {
-            console.log(`File already exists at destination, skipping: ${fileInfo.name}`);
-            transferredSize += fileInfo.size;
-            continue;
-          }
+	        try {
+	          // Check if file already exists
+	          const destExists = await fs.pathExists(fileInfo.destinationPath);
+	          if (destExists) {
+	            console.log(`File already exists at destination, skipping: ${fileInfo.name}`);
+	            transferredSize += fileInfo.size;
+	          }
 
-          // Copy file with progress tracking
-          await new Promise((resolve, reject) => {
-            const readStream = fs.createReadStream(fileInfo.sourcePath);
-            const writeStream = fs.createWriteStream(fileInfo.destinationPath);
+	          if (!destExists) {
+	            // Copy file with progress tracking
+	            await new Promise((resolve, reject) => {
+	              const readStream = fs.createReadStream(fileInfo.sourcePath);
+	              const writeStream = fs.createWriteStream(fileInfo.destinationPath);
 
-            let copiedBytes = 0;
-            const startTime = Date.now();
+	              let copiedBytes = 0;
+	              const startTime = Date.now();
 
-            readStream.on('data', (chunk) => {
-              copiedBytes += chunk.length;
-              transferredSize += chunk.length;
+	              readStream.on('data', (chunk) => {
+	                copiedBytes += chunk.length;
+	                transferredSize += chunk.length;
 
-              const elapsed = (Date.now() - startTime) / 1000; // seconds
-              const speed = elapsed > 0 ? copiedBytes / elapsed : 0;
+	                const elapsed = (Date.now() - startTime) / 1000; // seconds
+	                const speed = elapsed > 0 ? copiedBytes / elapsed : 0;
 
-              // Send progress update
-              windows.forEach((window) => {
-                window.webContents.send(IPC_CHANNELS.TRANSFER_PROGRESS, {
-                  currentFile: fileInfo.name,
-                  progress: (transferredSize / totalSize) * 100,
-                  transferredSize,
-                  totalSize,
-                  speed
-                });
-              });
-            });
+	                // Send progress update
+	                windows.forEach((window) => {
+	                  window.webContents.send(IPC_CHANNELS.TRANSFER_PROGRESS, {
+	                    currentFile: fileInfo.name,
+	                    progress: (transferredSize / totalSize) * 100,
+	                    transferredSize,
+	                    totalSize,
+	                    speed
+	                  });
+	                });
+	              });
 
-            readStream.on('error', reject);
-            writeStream.on('error', reject);
-            writeStream.on('finish', resolve);
+	              readStream.on('error', reject);
+	              writeStream.on('error', reject);
+	              writeStream.on('finish', resolve);
 
-            readStream.pipe(writeStream);
-          });
+	              readStream.pipe(writeStream);
+	            });
+	          }
 
-          console.log(`Successfully transferred: ${fileInfo.name}`);
-        } catch (error) {
+	          // Verify destination file integrity (critical safeguard).
+	          windows.forEach((window) => {
+	            window.webContents.send(IPC_CHANNELS.TRANSFER_PROGRESS, {
+	              currentFile: `Verifying ${fileInfo.name}`,
+	              progress: (transferredSize / totalSize) * 100,
+	              transferredSize,
+	              totalSize,
+	              speed: 0
+	            });
+	          });
+
+	          const readShaFile = async (shaPath) => {
+	            try {
+	              const txt = await fs.readFile(shaPath, 'utf8');
+	              const match = txt.match(/[a-fA-F0-9]{64}/);
+	              return match ? match[0].toLowerCase() : null;
+	            } catch (e) {
+	              return null;
+	            }
+	          };
+
+	          let expectedSha256 = await readShaFile(`${fileInfo.sourcePath}.sha256`);
+	          if (!expectedSha256) {
+	            // Fall back to hashing the source file; this catches transfer corruption even without a server checksum.
+	            expectedSha256 = await fileService.calculateChecksum(fileInfo.sourcePath, 'sha256');
+	          }
+
+	          const actualSha256 = await fileService.calculateChecksum(fileInfo.destinationPath, 'sha256');
+	          if (actualSha256.toLowerCase() !== expectedSha256.toLowerCase()) {
+	            try {
+	              await fs.remove(fileInfo.destinationPath);
+	            } catch (e) {
+	              // Ignore.
+	            }
+	            throw new Error(`Checksum mismatch after transfer for ${fileInfo.name}`);
+	          }
+
+	          // Write checksum alongside the USB file for later auditing.
+	          try {
+	            await fs.writeFile(`${fileInfo.destinationPath}.sha256`, `${expectedSha256}  ${fileInfo.name}\n`, 'utf8');
+	          } catch (e) {
+	            // Non-fatal.
+	          }
+
+	          console.log(`Successfully transferred: ${fileInfo.name}`);
+	        } catch (error) {
           console.error(`Error transferring ${fileInfo.name}:`, error);
           // Send error event
           windows.forEach((window) => {
@@ -437,6 +487,40 @@ function setupIpcHandlers() {
             });
           });
           throw error;
+        }
+      }
+
+      // Install selected readers on the USB as part of local-first transfer.
+      // This ensures local-first and direct-to-USB end with the same USB layout.
+      if (Array.isArray(selectedReaders) && selectedReaders.length > 0) {
+        console.log('Installing selected readers to USB:', selectedReaders);
+        const readerVersions = await kiwixManager.getLatestVersions();
+        for (const platform of selectedReaders) {
+          windows.forEach((window) => {
+            window.webContents.send(IPC_CHANNELS.TRANSFER_PROGRESS, {
+              currentFile: `Installing Kiwix reader (${platform})`,
+              progress: (transferredSize / totalSize) * 100,
+              transferredSize,
+              totalSize,
+              speed: 0
+            });
+          });
+
+          try {
+            const localReaderPath = readerVersions?.[platform]?.filename
+              ? path.join(downloadDir, readerVersions[platform].filename)
+              : null;
+            await kiwixManager.installToUSB(platform, destination, null, localReaderPath);
+          } catch (error) {
+            console.error(`Error installing ${platform} reader:`, error);
+            windows.forEach((window) => {
+              window.webContents.send(IPC_CHANNELS.TRANSFER_ERROR, {
+                message: `Failed to install ${platform} reader: ${error.message}`,
+                filename: platform
+              });
+            });
+            throw error;
+          }
         }
       }
 

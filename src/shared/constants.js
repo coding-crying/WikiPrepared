@@ -42,13 +42,15 @@ const DOWNLOAD_STATUS = {
 const KIWIX_PLATFORMS = {
   WINDOWS: 'windows',
   LINUX: 'linux',
-  MAC: 'mac',
+  MAC: 'macos', // Changed from 'mac' to 'macos' to match renderer
+  ANDROID: 'android',
 };
 
 const KIWIX_PLATFORM_NAMES = {
   [KIWIX_PLATFORMS.WINDOWS]: 'Windows',
   [KIWIX_PLATFORMS.LINUX]: 'Linux',
   [KIWIX_PLATFORMS.MAC]: 'macOS',
+  [KIWIX_PLATFORMS.ANDROID]: 'Android',
 };
 
 // File System Types

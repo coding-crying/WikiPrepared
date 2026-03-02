@@ -83,14 +83,24 @@ export const useZimsStore = create(
             return { ...installed, hasUpdate: false, isUpToDate: null }; // null = unknown
           }
 
-          const latest = catalog.find(zim =>
+          const matches = catalog.filter(zim =>
             zim.language === installed.language &&
             zim.topic === installed.topic &&
             zim.scope === installed.scope
           );
 
-          if (latest) {
-            const hasUpdate = latest.date > installed.date;
+          if (matches.length > 0) {
+            // Use the newest matching catalog entry by YYYY-MM date.
+            const latest = matches.reduce((currentLatest, candidate) => {
+              const latestDate = currentLatest?.date || '';
+              const candidateDate = candidate?.date || '';
+              return candidateDate > latestDate ? candidate : currentLatest;
+            }, matches[0]);
+
+            const canCompareByDate = Boolean(installed.date && latest?.date);
+            const hasUpdate = canCompareByDate ? latest.date > installed.date : false;
+            const isUpToDate = canCompareByDate ? !hasUpdate : null;
+
             if (hasUpdate) {
               updates.push({
                 installed,
@@ -101,9 +111,9 @@ export const useZimsStore = create(
             return {
               ...installed,
               hasUpdate,
-              isUpToDate: !hasUpdate,
-              latestDate: latest.date,
-              latestFilename: latest.filename
+              isUpToDate,
+              latestDate: latest?.date || null,
+              latestFilename: latest?.filename || null
             };
           }
 

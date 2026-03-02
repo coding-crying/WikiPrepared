@@ -1,7 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Box, Button, Typography, Link } from '@mui/material';
-import { ArrowForward as ArrowIcon, Usb as UsbIcon } from '@mui/icons-material';
+import { Box, Button, Typography, Link, Alert } from '@mui/material';
+import { ArrowForward as ArrowIcon, Usb as UsbIcon, Schedule as ScheduleIcon, ShoppingCart as ShopIcon } from '@mui/icons-material';
 import AppLayout from '../components/layout/AppLayout';
 import { ROUTES } from '../utils/constants';
 
@@ -54,18 +54,17 @@ export default function InitialChoiceScreen() {
           </Box>
 
           {/* Right: Content */}
-          <Box sx={{ textAlign: { xs: 'center', md: 'left' } }}>
+          <Box sx={{ textAlign: { xs: 'center', md: 'left' }, maxWidth: 520 }}>
             <Typography variant="h4" fontWeight={600} gutterBottom>
-              Create an offline Wikipedia USB
+              Put Wikipedia on a USB stick
             </Typography>
 
             <Typography
               variant="body1"
               color="text.secondary"
-              sx={{ mb: 3, maxWidth: 420 }}
+              sx={{ mb: 3, lineHeight: 1.7, fontSize: '1.05rem' }}
             >
-              Download Wikipedia content and Kiwix readers to a USB drive.
-              Access knowledge anywhere, no internet required.
+              Once set up, your USB stick works anywhere without internet.
             </Typography>
 
             {/* CTA Button */}
@@ -75,54 +74,80 @@ export default function InitialChoiceScreen() {
               onClick={handleGetStarted}
               endIcon={<ArrowIcon />}
               sx={{
-                px: 4,
-                py: 1.25,
-                fontSize: '1rem'
+                px: 5,
+                py: 1.5,
+                fontSize: '1.1rem',
+                mb: 3
               }}
             >
               Get Started
             </Button>
 
-            {/* Features - horizontal on landscape */}
+            {/* Time warning - simple text */}
             <Box
               sx={{
-                mt: 3,
+                mb: 3,
+                p: 2,
+                borderRadius: 1,
+                bgcolor: 'rgba(255, 255, 255, 0.05)',
+                border: '1px solid rgba(255, 255, 255, 0.1)'
+              }}
+            >
+              <Typography variant="body2" sx={{ mb: 1, fontSize: '0.95rem' }}>
+                <strong>Note:</strong> Full Wikipedia can take 10-20 hours to download.
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.9rem' }}>
+                Keep this software running during the download.
+              </Typography>
+            </Box>
+
+            {/* Slow internet option */}
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 3, fontSize: '0.95rem' }}>
+              Slow internet?{' '}
+              <Link
+                href="https://wikiprepared.com/shop"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Buy a premade USB stick
+              </Link>
+            </Typography>
+
+            {/* Footer links */}
+            <Box
+              sx={{
                 display: 'flex',
-                gap: { xs: 3, md: 4 },
-                flexWrap: 'wrap',
+                gap: 2.5,
+                alignItems: 'center',
                 justifyContent: { xs: 'center', md: 'flex-start' }
               }}
             >
-              {[
-                { label: 'Works Offline', desc: 'No internet needed' },
-                { label: 'Cross Platform', desc: 'Win, Mac, Linux' },
-                { label: 'Auto Updates', desc: 'Keep content fresh' }
-              ].map((feature) => (
-                <Box key={feature.label} sx={{ textAlign: { xs: 'center', md: 'left' } }}>
-                  <Typography variant="caption" fontWeight={600} display="block">
-                    {feature.label}
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    {feature.desc}
-                  </Typography>
-                </Box>
-              ))}
-            </Box>
-
-            {/* Website link */}
-            <Box sx={{ mt: 3 }}>
               <Link
                 href="https://wikiprepared.com"
                 target="_blank"
                 rel="noopener noreferrer"
                 sx={{
                   color: 'text.secondary',
-                  fontSize: '0.75rem',
+                  fontSize: '0.85rem',
                   textDecoration: 'none',
                   '&:hover': { color: 'primary.main', textDecoration: 'underline' }
                 }}
               >
                 wikiprepared.com
+              </Link>
+              <Typography variant="body2" color="text.secondary">•</Typography>
+              <Link
+                href="https://wikiprepared.com/support"
+                target="_blank"
+                rel="noopener noreferrer"
+                sx={{
+                  color: 'text.secondary',
+                  fontSize: '0.85rem',
+                  textDecoration: 'none',
+                  '&:hover': { color: 'primary.main', textDecoration: 'underline' }
+                }}
+              >
+                Support the Project
               </Link>
             </Box>
           </Box>

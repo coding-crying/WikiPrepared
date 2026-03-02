@@ -10,8 +10,10 @@ import {
   List,
   ListItem,
   ListItemText,
-  Divider
+  Divider,
+  Button
 } from '@mui/material';
+import { Check as CheckIcon } from '@mui/icons-material';
 import { useAppFlowStore } from '../stores/appFlowStore';
 import { useZimsStore } from '../stores/zimsStore';
 import { useDrivesStore } from '../stores/drivesStore';
@@ -26,7 +28,7 @@ import { formatBytes } from '../utils/formatters';
  */
 export default function TransferProgressScreen() {
   const navigate = useNavigate();
-  const { selectedDrive, selectedZims, transferProgress, setTransferProgress } = useAppFlowStore();
+  const { selectedDrive, selectedZims, selectedReaders, transferProgress, setTransferProgress } = useAppFlowStore();
   const { installedZims } = useZimsStore();
   const getDrive = useDrivesStore(state => state.getDrive);
 
@@ -131,7 +133,8 @@ export default function TransferProgressScreen() {
       // Start transfer
       await window.electronAPI.invoke('transfer:start', {
         destination: mountpoint,
-        filesToTransfer: selectedZims.map(z => z.filename)
+        filesToTransfer: selectedZims.map(z => z.filename),
+        selectedReaders
       });
     } catch (error) {
       console.error('Failed to start transfer:', error);

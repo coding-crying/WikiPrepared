@@ -17,6 +17,7 @@ if (typeof global.FormData === 'undefined') {
 
 const { app, BrowserWindow } = require('electron');
 const path = require('path');
+const fs = require('fs');
 const { setupIpcHandlers } = require('./ipc-handlers');
 
 // Declare webpack magic globals (injected by Electron Forge's webpack plugin)
@@ -34,23 +35,18 @@ let mainWindow;
  * Create the main application window
  */
 const createWindow = () => {
-  // Electron Forge webpack plugin injects MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY at build time
-  // In development mode, this points to the webpack dev server's preload bundle
-  let preloadPath;
+  // Electron Forge may provide entries as compile-time globals or runtime env vars.
+  // Electron Builder packages won't have these and should use bundled files.
+  const forgePreloadEntry = (
+    typeof MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY !== 'undefined'
+      ? MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY
+      : process.env.MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY
+  );
 
-  try {
-    // Try to use the webpack constant (it's injected by Electron Forge)
-    preloadPath = MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY;
-    console.log('Using webpack preload path:', preloadPath);
-  } catch (e) {
-    // Fallback for non-webpack execution (shouldn't happen with Electron Forge)
-    preloadPath = path.join(__dirname, 'preload.js');
-    console.log('Using fallback preload path:', preloadPath);
-    console.log('Warning: MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY not defined. Are you running through Electron Forge?');
-  }
+  const preloadPath = forgePreloadEntry || path.join(__dirname, 'preload.js');
 
   console.log('Preload path:', preloadPath);
-  console.log('Preload exists:', require('fs').existsSync(preloadPath));
+  console.log('Preload exists:', fs.existsSync(preloadPath));
 
   mainWindow = new BrowserWindow({
     width: 1200,
@@ -66,18 +62,54 @@ const createWindow = () => {
     show: false, // Don't show until ready
   });
 
-  // Load the index.html of the app
-  // Electron Forge webpack plugin injects MAIN_WINDOW_WEBPACK_ENTRY
-  try {
-    const rendererUrl = MAIN_WINDOW_WEBPACK_ENTRY;
-    console.log('Loading from webpack entry:', rendererUrl);
-    mainWindow.loadURL(rendererUrl);
-  } catch (e) {
-    // Fallback for non-webpack execution (shouldn't happen with Electron Forge)
-    const fallbackUrl = 'http://localhost:3000/main_window/';
-    console.log('Loading from fallback:', fallbackUrl);
-    console.log('Warning: MAIN_WINDOW_WEBPACK_ENTRY not defined. Are you running through Electron Forge?');
-    mainWindow.loadURL(fallbackUrl);
+  // Load renderer entry. Prefer Forge entry (global or env) when available.
+  const forgeRendererEntry = (
+    typeof MAIN_WINDOW_WEBPACK_ENTRY !== 'undefined'
+      ? MAIN_WINDOW_WEBPACK_ENTRY
+      : process.env.MAIN_WINDOW_WEBPACK_ENTRY
+  );
+
+  // Fallbacks for packaged/non-forge execution.
+  const rendererCandidates = [
+    path.join(__dirname, '../renderer/index.html'), // electron-builder output
+    path.join(__dirname, '../../.webpack/renderer/main_window/index.html'), // forge output layout
+    path.join(__dirname, '../../build/renderer/index.html'), // manual webpack:prod output
+  ];
+  const bundledRendererPath = rendererCandidates.find((candidate) => fs.existsSync(candidate)) || null;
+
+  const isDev = !app.isPackaged;
+  const defaultDevUrl = 'http://localhost:3000/main_window/index.html';
+  const initialRendererUrl = forgeRendererEntry || (isDev ? defaultDevUrl : null);
+
+  let rendererFallbackAttempted = false;
+
+  // Log load errors and (in dev) fall back to a built file if the dev server isn't reachable.
+  mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, _validatedURL, isMainFrame) => {
+    console.error('Failed to load:', errorCode, errorDescription);
+
+    if (
+      !rendererFallbackAttempted &&
+      isMainFrame &&
+      isDev &&
+      initialRendererUrl &&
+      bundledRendererPath &&
+      (errorDescription.includes('ERR_CONNECTION_REFUSED') || errorDescription.includes('ERR_NAME_NOT_RESOLVED'))
+    ) {
+      rendererFallbackAttempted = true;
+      console.log('Dev server not reachable, falling back to file:', bundledRendererPath);
+      mainWindow.loadFile(bundledRendererPath);
+    }
+  });
+
+  if (initialRendererUrl) {
+    console.log('Loading from webpack entry:', initialRendererUrl);
+    mainWindow.loadURL(initialRendererUrl);
+  } else if (bundledRendererPath) {
+    console.log('Loading bundled renderer file:', bundledRendererPath);
+    mainWindow.loadFile(bundledRendererPath);
+  } else {
+    console.error('No renderer entry found. Checked:', rendererCandidates);
+    return;
   }
 
   // Show window when ready to show
@@ -93,11 +125,6 @@ const createWindow = () => {
       mainWindow.show();
     }
   }, 3000);
-
-  // Log load errors
-  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
-    console.error('Failed to load:', errorCode, errorDescription);
-  });
 
   // Open DevTools in development
   if (process.env.NODE_ENV === 'development') {

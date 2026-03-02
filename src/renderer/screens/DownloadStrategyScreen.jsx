@@ -163,7 +163,10 @@ export default function DownloadStrategyScreen() {
             gap: 2,
             maxWidth: 700,
             mx: 'auto',
-            mb: 2
+            mb: 2,
+            pt: 2,
+            pb: 2,
+            px: 1
           }}
         >
           {/* Local First Option */}
@@ -174,8 +177,9 @@ export default function DownloadStrategyScreen() {
               borderColor: canUseLocalFirst ? 'success.main' : 'grey.700',
               opacity: canUseLocalFirst ? 1 : 0.6,
               transition: 'all 0.2s ease-in-out',
+              minHeight: 200,
               '&:hover': canUseLocalFirst ? {
-                transform: 'translateY(-4px)',
+                transform: 'translateY(-2px)',
                 boxShadow: 6
               } : {}
             }}
@@ -183,7 +187,7 @@ export default function DownloadStrategyScreen() {
           >
             <CardContent sx={{ p: 3 }}>
               <Box sx={{ display: 'flex', alignItems: 'flex-start', mb: 2 }}>
-                <CloudIcon sx={{ fontSize: 40, color: canUseLocalFirst ? 'success.main' : 'grey.500', mr: 2 }} />
+                <CloudIcon sx={{ fontSize: 40, color: canUseLocalFirst ? 'success.main' : 'grey.500', mr: 2, flexShrink: 0 }} />
                 <Box sx={{ flexGrow: 1 }}>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
                     <Typography variant="h6">
@@ -231,8 +235,9 @@ export default function DownloadStrategyScreen() {
               borderColor: (!canUseLocalFirst && canUseDirectToUSB) ? 'primary.main' : 'transparent',
               opacity: canUseDirectToUSB ? 1 : 0.6,
               transition: 'all 0.2s ease-in-out',
+              minHeight: 200,
               '&:hover': canUseDirectToUSB ? {
-                transform: 'translateY(-4px)',
+                transform: 'translateY(-2px)',
                 boxShadow: 6
               } : {}
             }}
@@ -240,7 +245,7 @@ export default function DownloadStrategyScreen() {
           >
             <CardContent sx={{ p: 3 }}>
               <Box sx={{ display: 'flex', alignItems: 'flex-start', mb: 2 }}>
-                <UsbIcon sx={{ fontSize: 40, color: 'primary.main', mr: 2 }} />
+                <UsbIcon sx={{ fontSize: 40, color: 'primary.main', mr: 2, flexShrink: 0 }} />
                 <Box sx={{ flexGrow: 1 }}>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
                     <Typography variant="h6">

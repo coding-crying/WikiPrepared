@@ -10,22 +10,21 @@ import {
   MenuItem,
   Button,
   CircularProgress,
-  Alert,
-  Tabs,
-  Tab,
   Chip,
   Tooltip,
-  IconButton,
   Accordion,
   AccordionSummary,
-  AccordionDetails
+  AccordionDetails,
+  Alert
 } from '@mui/material';
 import {
   Refresh as RefreshIcon,
   LibraryBooks as ContentIcon,
   Apps as AppsIcon,
   Info as InfoIcon,
-  ExpandMore as ExpandMoreIcon
+  ExpandMore as ExpandMoreIcon,
+  ThumbUp as RecommendedIcon,
+  CheckCircle as CheckIcon
 } from '@mui/icons-material';
 import { useAppFlowStore } from '../stores/appFlowStore';
 import { useZimsStore } from '../stores/zimsStore';
@@ -36,7 +35,7 @@ import StorageBar from '../components/common/StorageBar';
 import AppLayout from '../components/layout/AppLayout';
 import NavigationButtons from '../components/layout/NavigationButtons';
 import { ROUTES, getLanguageName, STORAGE } from '../utils/constants';
-import { formatBytes } from '../utils/formatters';
+import { formatBytes, formatDate } from '../utils/formatters';
 
 /**
  * Step 2: Main configuration screen with tabs
@@ -44,8 +43,10 @@ import { formatBytes } from '../utils/formatters';
  */
 export default function MainConfigScreen() {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState(0);
   const [expandedAccordion, setExpandedAccordion] = useState('addNew'); // 'existing' or 'addNew'
+  const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
+  const [selectedScope, setSelectedScope] = useState('all'); // 'all', 'mini', 'nopic', 'maxi'
+  const [selectedTopic, setSelectedTopic] = useState('all'); // 'all' or specific topic
 
   const handleAccordionChange = (panel) => (event, isExpanded) => {
     setExpandedAccordion(isExpanded ? panel : false);
@@ -123,6 +124,19 @@ export default function MainConfigScreen() {
     initialize();
   }, [selectedDrive]);
 
+  // Auto-select all downloadable readers by default (Windows, Linux, macOS, Android)
+  // iOS is App Store only, so it's excluded
+  useEffect(() => {
+    if (selectedReaders.length === 0) {
+      // Auto-select all except iOS
+      ['windows', 'linux', 'macos', 'android'].forEach(platform => {
+        if (!selectedReaders.includes(platform)) {
+          toggleReader(platform);
+        }
+      });
+    }
+  }, []); // Only run once on mount
+
   const handleContinue = () => {
     if (selectedZims.length === 0) {
       alert('Please select at least one Wikipedia dump');
@@ -159,19 +173,116 @@ export default function MainConfigScreen() {
   const filteredZims = getFilteredZims();
   const availableLanguages = getAvailableLanguages();
 
-  // Determine recommended ZIM based on drive capacity
-  // 128GB drive is usually ~119GiB. Full Wikipedia (maxi) is ~100-110GB.
-  // 64GB drive is usually ~59GiB. Nopic is ~45GB.
+  // Smart recommendation logic
   let recommendedScope = null;
+  let recommendedZim = null;
+  let idealScope = null; // What COULD fit if drive was empty
+  let idealZim = null;
+  let hasSpaceConstraint = false;
+  let recommendationMessage = null;
+
+  // Determine ideal scope based on drive TOTAL capacity
   if (totalCapacity > 100 * 1024 * 1024 * 1024) { // > 100GB
-    recommendedScope = 'maxi';
+    idealScope = 'maxi';
   } else if (totalCapacity > 50 * 1024 * 1024 * 1024) { // > 50GB
-    recommendedScope = 'nopic';
+    idealScope = 'nopic';
+  } else if (totalCapacity > 20 * 1024 * 1024 * 1024) { // > 20GB
+    idealScope = 'mini';
   }
 
-  // Count items for tab badges
-  const selectedContentCount = selectedZims.length;
-  const selectedReadersCount = selectedReaders.length;
+  // Find ideal ZIM
+  if (idealScope) {
+    idealZim = filteredZims.find(zim =>
+      zim.scope === idealScope &&
+      zim.topic === 'all' &&
+      zim.language === selectedLanguage
+    );
+  }
+
+  // Check filesystem compatibility for large files (>4GB on FAT32)
+  const filesystem = selectedDrive?.fsType?.toLowerCase();
+  const supportsLargeFiles = filesystem && ['exfat', 'ntfs', 'ext4', 'ext3', 'apfs', 'hfsplus', 'hfs+', 'hfs', 'btrfs', 'xfs', 'fuseblk'].includes(filesystem);
+
+  // Now determine ACTUAL recommendation based on available space and filesystem
+  const scopes = ['maxi', 'nopic', 'mini']; // Ordered by size (largest first)
+
+  for (const scope of scopes) {
+    const candidateZim = filteredZims.find(zim =>
+      zim.scope === scope &&
+      zim.topic === 'all' &&
+      zim.language === selectedLanguage
+    );
+
+    if (candidateZim) {
+      // Check if it fits in available space
+      const wouldFit = candidateZim.size <= freeSpace;
+
+      // Check filesystem compatibility for files >4GB
+      const filesystemCompatible = supportsLargeFiles || candidateZim.size <= STORAGE.FAT32_MAX_FILE_SIZE;
+
+      if (wouldFit && filesystemCompatible) {
+        recommendedZim = candidateZim;
+        recommendedScope = scope;
+
+        // Check if we had to downgrade from ideal
+        if (idealZim && idealZim.scope !== scope) {
+          hasSpaceConstraint = true;
+          recommendationMessage = `Your ${formatBytes(totalCapacity)} drive could fit ${idealZim.scope === 'maxi' ? 'the complete Wikipedia with images' : idealZim.scope === 'nopic' ? 'full Wikipedia without images' : 'the mini Wikipedia'} (${formatBytes(idealZim.size)}), but you have existing files using ${formatBytes(usedSpace)}. The largest version that fits now is the ${scope === 'nopic' ? 'No Pictures' : scope === 'mini' ? 'Mini' : 'Complete'} edition.`;
+        }
+        break;
+      } else if (!filesystemCompatible) {
+        // Filesystem issue
+        if (scope === idealScope) {
+          recommendationMessage = `Your drive's ${filesystem?.toUpperCase()} filesystem doesn't support files over 4GB. We recommend the ${scope === 'nopic' ? 'No Pictures' : 'Mini'} version instead, or reformat to exFAT.`;
+        }
+      }
+    }
+  }
+
+  // If nothing fits, show warning
+  if (!recommendedZim && idealZim) {
+    recommendationMessage = `Your drive doesn't have enough space for any Wikipedia version. You need at least ${formatBytes(20 * 1024 * 1024 * 1024)} free for the Mini edition. Currently ${formatBytes(freeSpace)} available.`;
+  }
+
+  // Apply scope and topic filters
+  const displayedZims = filteredZims.filter(zim => {
+    if (selectedScope !== 'all' && zim.scope !== selectedScope) return false;
+    if (selectedTopic !== 'all' && zim.topic !== selectedTopic) return false;
+    return true;
+  });
+
+  // Get available topics for current language
+  const availableTopics = [...new Set(filteredZims.map(zim => zim.topic))].filter(Boolean).sort();
+
+  // Quick Pick handler
+  const handleQuickPick = () => {
+    if (recommendedZim && !selectedZims.some(z => z.filename === recommendedZim.filename)) {
+      toggleZim(recommendedZim);
+    }
+  };
+
+  // Installed->latest lookup for update selections.
+  const latestByInstalledFilename = updates.reduce((acc, update) => {
+    if (update?.installed?.filename && update?.latest) {
+      acc[update.installed.filename] = update.latest;
+    }
+    return acc;
+  }, {});
+
+  const getSelectableInstalledZim = (installedZim) =>
+    latestByInstalledFilename[installedZim.filename] || installedZim;
+
+  const isInstalledZimSelected = (installedZim) => {
+    if (selectedZims.some(z => z.filename === installedZim.filename)) {
+      return true;
+    }
+    const latest = latestByInstalledFilename[installedZim.filename];
+    return Boolean(latest && selectedZims.some(z => z.filename === latest.filename));
+  };
+
+  const upToDateCount = installedZims.filter(zim => zim.isUpToDate === true).length;
+  const unknownStatusCount = installedZims.filter(zim => zim.isUpToDate === null).length;
+
 
   // Compute tooltip message for disabled Continue button
   const continueTooltip = selectedZims.length === 0
@@ -188,46 +299,10 @@ export default function MainConfigScreen() {
       currentStep={2}
     >
       <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-        {/* Tabs */}
-        <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
-          <Tabs
-            value={activeTab}
-            onChange={(e, v) => setActiveTab(v)}
-            sx={{ minHeight: 42 }}
-          >
-            <Tab
-              icon={<ContentIcon sx={{ fontSize: 20 }} />}
-              iconPosition="start"
-              label={
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  Wikipedia Content
-                  {selectedContentCount > 0 && (
-                    <Chip label={selectedContentCount} size="small" color="primary" sx={{ height: 20, fontSize: '0.7rem' }} />
-                  )}
-                </Box>
-              }
-              sx={{ minHeight: 42, textTransform: 'none' }}
-            />
-            <Tab
-              icon={<AppsIcon sx={{ fontSize: 20 }} />}
-              iconPosition="start"
-              label={
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  Reader Apps
-                  {selectedReadersCount > 0 && (
-                    <Chip label={selectedReadersCount} size="small" color="primary" sx={{ height: 20, fontSize: '0.7rem' }} />
-                  )}
-                </Box>
-              }
-              sx={{ minHeight: 42, textTransform: 'none' }}
-            />
-          </Tabs>
-        </Box>
-
-        {/* Tab Content */}
+        {/* Main Content - Single scrollable area */}
         <Box sx={{ flex: 1, overflow: 'auto', minHeight: 200 }}>
-          {/* Content Tab */}
-          {activeTab === 0 && (
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {/* WIKIPEDIA CONTENT SECTION */}
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
               {/* Existing ZIMs on drive - Collapsible */}
               {installedZims.length > 0 && (
@@ -263,10 +338,18 @@ export default function MainConfigScreen() {
                           sx={{ height: 18, fontSize: '0.65rem' }}
                         />
                       )}
+                      {updates.length === 0 && upToDateCount > 0 && unknownStatusCount === 0 && (
+                        <Chip
+                          label="Up to date"
+                          size="small"
+                          color="success"
+                          sx={{ height: 18, fontSize: '0.65rem' }}
+                        />
+                      )}
                     </Box>
                   </AccordionSummary>
                   <AccordionDetails sx={{ pt: 0 }}>
-                    {updates.length > 0 && (
+                    {updates.length > 0 ? (
                       <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <Typography variant="caption" color="text.secondary">
                           {updates.length} ZIM file{updates.length > 1 ? 's have' : ' has'} newer versions available
@@ -275,11 +358,11 @@ export default function MainConfigScreen() {
                           variant="outlined"
                           size="small"
                           onClick={() => {
-                            // Select all ZIMs that have updates
-                            const updatedZims = installedZims.filter(zim => zim.hasUpdate);
-                            updatedZims.forEach(zim => {
-                              if (!selectedZims.some(z => z.filename === zim.filename)) {
-                                toggleZim(zim);
+                            // Select all latest catalog versions for installed files with updates.
+                            updates.forEach((update) => {
+                              const latest = update?.latest;
+                              if (latest && !selectedZims.some(z => z.filename === latest.filename)) {
+                                toggleZim(latest);
                               }
                             });
                           }}
@@ -288,14 +371,25 @@ export default function MainConfigScreen() {
                           Select All Updates
                         </Button>
                       </Box>
+                    ) : (
+                      <Box sx={{ mb: 2 }}>
+                        <Typography
+                          variant="caption"
+                          color={unknownStatusCount > 0 ? 'warning.main' : 'success.main'}
+                        >
+                          {unknownStatusCount > 0
+                            ? `${upToDateCount} up to date, ${unknownStatusCount} not found in catalog`
+                            : `No updates found. ${upToDateCount} ZIM file${upToDateCount !== 1 ? 's are' : ' is'} up to date`}
+                        </Typography>
+                      </Box>
                     )}
                     <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 1 }}>
                       {installedZims.map((zim) => (
                         <ZimListItem
                           key={zim.filename}
                           zim={zim}
-                          isSelected={selectedZims.some(z => z.filename === zim.filename)}
-                          onToggle={() => toggleZim(zim)}
+                          isSelected={isInstalledZimSelected(zim)}
+                          onToggle={() => toggleZim(getSelectableInstalledZim(zim))}
                           showUpdate={true}
                         />
                       ))}
@@ -334,28 +428,22 @@ export default function MainConfigScreen() {
                 </AccordionSummary>
                 <AccordionDetails sx={{ pt: 2, flex: 1, overflow: 'auto', minHeight: 100 }}>
                   {/* Language Selector */}
-                  <Box sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 2 }}>
-                    <Tooltip
-                      title={availableLanguages.length === 0 ? "Loading available languages..." : ""}
-                      arrow
-                      placement="top"
-                    >
-                      <FormControl size="small" sx={{ minWidth: 200 }}>
-                        <InputLabel>Language</InputLabel>
-                        <Select
-                          value={availableLanguages.includes(selectedLanguage) ? selectedLanguage : ''}
-                          onChange={(e) => setLanguage(e.target.value)}
-                          label="Language"
-                          disabled={availableLanguages.length === 0}
-                        >
-                          {availableLanguages.map((lang) => (
-                            <MenuItem key={lang} value={lang}>
-                              {getLanguageName(lang)}
-                            </MenuItem>
-                          ))}
-                        </Select>
-                      </FormControl>
-                    </Tooltip>
+                  <Box sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+                    <FormControl size="small" sx={{ minWidth: 200 }}>
+                      <InputLabel>Language</InputLabel>
+                      <Select
+                        value={availableLanguages.includes(selectedLanguage) ? selectedLanguage : ''}
+                        onChange={(e) => setLanguage(e.target.value)}
+                        label="Language"
+                        disabled={availableLanguages.length === 0 || isLoading}
+                      >
+                        {availableLanguages.map((lang) => (
+                          <MenuItem key={lang} value={lang}>
+                            {getLanguageName(lang)}
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
                     {availableLanguages.length === 0 && <CircularProgress size={20} />}
                   </Box>
 
@@ -363,41 +451,276 @@ export default function MainConfigScreen() {
                     <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', py: 4 }}>
                       <CircularProgress size={32} />
                     </Box>
-                  ) : filteredZims.length === 0 ? (
-                    <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', py: 3 }}>
-                      No Wikipedia dumps available for this language
-                    </Typography>
                   ) : (
-                    <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gridAutoFlow: 'dense', gap: 1 }}>
-                      {filteredZims.map((zim) => {
-                        const isRecommended = zim.scope === recommendedScope && zim.topic === 'all';
-                        return (
-                          <ZimListItem
-                            key={zim.filename}
-                            zim={zim}
-                            isSelected={selectedZims.some(z => z.filename === zim.filename)}
-                            onToggle={() => toggleZim(zim)}
-                            isRecommended={isRecommended}
-                            sx={isRecommended ? { gridColumn: { sm: 'span 2' } } : {}}
-                          />
-                        );
-                      })}
-                    </Box>
+                    <>
+                      {/* RECOMMENDED SECTION - Prominent and Simple */}
+                      {recommendedZim && selectedDrive && (
+                        <Paper
+                          variant="outlined"
+                          sx={{
+                            p: 2.5,
+                            mb: 3,
+                            bgcolor: 'rgba(25, 118, 210, 0.08)',
+                            border: '2px solid',
+                            borderColor: 'primary.main',
+                            borderRadius: 2
+                          }}
+                        >
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 2 }}>
+                            <RecommendedIcon sx={{ color: 'primary.main', fontSize: 24 }} />
+                            <Typography variant="h6" fontWeight={700} color="primary">
+                              Recommended for Your USB
+                            </Typography>
+                          </Box>
+
+                          {/* Space constraint or filesystem message */}
+                          {hasSpaceConstraint || recommendationMessage ? (
+                            <Alert severity="info" sx={{ mb: 2 }}>
+                              <Typography variant="body2">
+                                {recommendationMessage}
+                              </Typography>
+                            </Alert>
+                          ) : (
+                            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                              Based on your {formatBytes(totalCapacity)} drive with {formatBytes(freeSpace)} available:
+                            </Typography>
+                          )}
+
+                          <Box sx={{
+                            p: 2,
+                            bgcolor: 'background.paper',
+                            borderRadius: 1.5,
+                            border: '1px solid',
+                            borderColor: 'divider',
+                            mb: 2
+                          }}>
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
+                              <Box>
+                                <Typography variant="h6" fontWeight={600}>
+                                  {getLanguageName(recommendedZim.language)} Wikipedia
+                                </Typography>
+                                <Typography variant="body2" color="text.secondary">
+                                  {recommendedScope === 'maxi' && 'Complete with images'}
+                                  {recommendedScope === 'nopic' && 'Full articles without images'}
+                                  {recommendedScope === 'mini' && 'Essential articles only'}
+                                </Typography>
+                              </Box>
+                              <Chip
+                                label={formatBytes(recommendedZim.size)}
+                                color="primary"
+                                sx={{ fontWeight: 700 }}
+                              />
+                            </Box>
+                            <Typography variant="caption" color="text.secondary">
+                              {recommendedZim.articleCount && `${recommendedZim.articleCount.toLocaleString()} articles`}
+                              {recommendedZim.date && ` · Updated ${formatDate(recommendedZim.date)}`}
+                            </Typography>
+                          </Box>
+
+                          <Button
+                            variant="contained"
+                            color="primary"
+                            size="large"
+                            fullWidth
+                            onClick={handleQuickPick}
+                            disabled={selectedZims.some(z => z.filename === recommendedZim.filename)}
+                            sx={{
+                              textTransform: 'none',
+                              fontWeight: 700,
+                              py: 1.5,
+                              fontSize: '1rem'
+                            }}
+                            startIcon={selectedZims.some(z => z.filename === recommendedZim.filename) ? <CheckIcon /> : <RecommendedIcon />}
+                          >
+                            {selectedZims.some(z => z.filename === recommendedZim.filename)
+                              ? 'Selected'
+                              : 'Select Recommended'}
+                          </Button>
+                        </Paper>
+                      )}
+
+                      {/* MORE OPTIONS - Collapsible */}
+                      <Box>
+                        <Button
+                          variant="outlined"
+                          fullWidth
+                          onClick={() => setShowAdvancedOptions(!showAdvancedOptions)}
+                          endIcon={<ExpandMoreIcon sx={{ transform: showAdvancedOptions ? 'rotate(180deg)' : 'rotate(0)', transition: 'transform 0.2s' }} />}
+                          sx={{
+                            textTransform: 'none',
+                            mb: showAdvancedOptions ? 2 : 0,
+                            borderStyle: 'dashed'
+                          }}
+                        >
+                          {showAdvancedOptions ? 'Hide' : 'Show'} More Options
+                        </Button>
+
+                        {showAdvancedOptions && (
+                          <Box>
+                            {/* Filters Section */}
+                            <Box sx={{ mb: 2, p: 1.5, bgcolor: 'rgba(255,255,255,0.02)', borderRadius: 1, border: '1px solid', borderColor: 'divider' }}>
+                              {/* Scope Filter */}
+                              <Box sx={{ mb: 2 }}>
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                                  <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
+                                    Content Type
+                                  </Typography>
+                                  <Tooltip
+                                    title="Complete includes all articles with pictures (~100GB). No Pictures has full text without images (~45GB). Mini includes only essential articles (~10GB)."
+                                    arrow
+                                    placement="top"
+                                  >
+                                    <InfoIcon sx={{ fontSize: 14, color: 'text.disabled', cursor: 'help' }} />
+                                  </Tooltip>
+                                </Box>
+                                <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                                  <Chip
+                                    label="All Types"
+                                    onClick={() => setSelectedScope('all')}
+                                    color={selectedScope === 'all' ? 'primary' : 'default'}
+                                    variant={selectedScope === 'all' ? 'filled' : 'outlined'}
+                                    size="small"
+                                    sx={{ fontWeight: selectedScope === 'all' ? 600 : 400 }}
+                                  />
+                                  <Chip
+                                    label="Complete (with pictures)"
+                                    onClick={() => setSelectedScope('maxi')}
+                                    color={selectedScope === 'maxi' ? 'primary' : 'default'}
+                                    variant={selectedScope === 'maxi' ? 'filled' : 'outlined'}
+                                    size="small"
+                                    sx={{ fontWeight: selectedScope === 'maxi' ? 600 : 400 }}
+                                  />
+                                  <Chip
+                                    label="No Pictures"
+                                    onClick={() => setSelectedScope('nopic')}
+                                    color={selectedScope === 'nopic' ? 'primary' : 'default'}
+                                    variant={selectedScope === 'nopic' ? 'filled' : 'outlined'}
+                                    size="small"
+                                    sx={{ fontWeight: selectedScope === 'nopic' ? 600 : 400 }}
+                                  />
+                                  <Chip
+                                    label="Mini (essential only)"
+                                    onClick={() => setSelectedScope('mini')}
+                                    color={selectedScope === 'mini' ? 'primary' : 'default'}
+                                    variant={selectedScope === 'mini' ? 'filled' : 'outlined'}
+                                    size="small"
+                                    sx={{ fontWeight: selectedScope === 'mini' ? 600 : 400 }}
+                                  />
+                                </Box>
+                              </Box>
+
+                              {/* Topic Filter */}
+                              {availableTopics.length > 1 && (
+                                <Box>
+                                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                                    <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
+                                      Topic
+                                    </Typography>
+                                    <Tooltip
+                                      title="Filter by subject area. 'All Topics' includes the entire Wikipedia. Specific topics contain only articles in that subject."
+                                      arrow
+                                      placement="top"
+                                    >
+                                      <InfoIcon sx={{ fontSize: 14, color: 'text.disabled', cursor: 'help' }} />
+                                    </Tooltip>
+                                  </Box>
+                                  <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                                    <Chip
+                                      label="All Topics"
+                                      onClick={() => setSelectedTopic('all')}
+                                      color={selectedTopic === 'all' ? 'primary' : 'default'}
+                                      variant={selectedTopic === 'all' ? 'filled' : 'outlined'}
+                                      size="small"
+                                      sx={{ fontWeight: selectedTopic === 'all' ? 600 : 400 }}
+                                    />
+                                    {availableTopics.map((topic) => (
+                                      <Chip
+                                        key={topic}
+                                        label={topic === 'all' ? 'All Topics' : topic.charAt(0).toUpperCase() + topic.slice(1)}
+                                        onClick={() => setSelectedTopic(topic)}
+                                        color={selectedTopic === topic ? 'primary' : 'default'}
+                                        variant={selectedTopic === topic ? 'filled' : 'outlined'}
+                                        size="small"
+                                        sx={{ fontWeight: selectedTopic === topic ? 600 : 400 }}
+                                      />
+                                    ))}
+                                  </Box>
+                                </Box>
+                              )}
+                            </Box>
+
+                            {/* ZIM List */}
+                            {displayedZims.length === 0 ? (
+                              <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', py: 3 }}>
+                                {filteredZims.length === 0
+                                  ? 'No Wikipedia dumps available for this language'
+                                  : 'No content matches your filters. Try adjusting the filters above.'}
+                              </Typography>
+                            ) : (
+                              <>
+                                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+                                  Showing {displayedZims.length} of {filteredZims.length} available
+                                </Typography>
+                                <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 1 }}>
+                                  {displayedZims.map((zim) => {
+                                    const isRecommended = zim.filename === recommendedZim?.filename;
+                                    return (
+                                      <ZimListItem
+                                        key={zim.filename}
+                                        zim={zim}
+                                        isSelected={selectedZims.some(z => z.filename === zim.filename)}
+                                        onToggle={() => toggleZim(zim)}
+                                        isRecommended={false}
+                                      />
+                                    );
+                                  })}
+                                </Box>
+                              </>
+                            )}
+                          </Box>
+                        )}
+                      </Box>
+                    </>
                   )}
                 </AccordionDetails>
               </Accordion>
             </Box>
-          )}
 
-          {/* Reader Apps Tab */}
-          {activeTab === 1 && (
-            <Paper variant="outlined" sx={{ p: 2, height: '100%' }}>
+            {/* READER APPS SECTION - Below ZIM selection, less prominent */}
+            <Paper
+              variant="outlined"
+              sx={{
+                p: 2,
+                bgcolor: 'rgba(255,255,255,0.01)',
+                border: '1px solid',
+                borderColor: 'rgba(255,255,255,0.08)',
+                borderStyle: 'dashed'
+              }}
+            >
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1.5 }}>
+                <AppsIcon sx={{ color: 'text.secondary', fontSize: 20 }} />
+                <Typography variant="subtitle1" fontWeight={600}>
+                  Reader Apps
+                </Typography>
+                {selectedReaders.length > 0 && (
+                  <Chip
+                    label={`${selectedReaders.length} selected`}
+                    size="small"
+                    color="success"
+                    variant="outlined"
+                    sx={{ height: 18, fontSize: '0.65rem' }}
+                  />
+                )}
+              </Box>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
+                All reader apps are automatically selected. Click any platform to deselect it if not needed.
+              </Typography>
               <ReaderSelector
                 selectedReaders={selectedReaders}
                 onToggle={toggleReader}
               />
             </Paper>
-          )}
+          </Box>
         </Box>
 
         {/* Selection Summary */}

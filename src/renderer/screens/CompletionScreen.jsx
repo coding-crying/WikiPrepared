@@ -46,7 +46,11 @@ export default function CompletionScreen() {
     if (!selectedDrive) return;
 
     try {
-      await window.electronAPI.invoke('drives:eject', selectedDrive.device);
+      const platform = window.electronAPI?.platform;
+      const ejectTarget = platform === 'win32'
+        ? (selectedDrive.mountpoints?.[0]?.path || selectedDrive.mountpoint || selectedDrive.device)
+        : (selectedDrive.device || selectedDrive.mountpoints?.[0]?.path || selectedDrive.mountpoint);
+      await window.electronAPI.invoke('drives:eject', ejectTarget);
       showToast('USB drive ejected safely. You can now remove it.', 'success');
     } catch (error) {
       console.error('Failed to eject drive:', error);
