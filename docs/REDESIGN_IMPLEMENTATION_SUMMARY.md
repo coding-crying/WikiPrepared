@@ -8,7 +8,7 @@
 
 ## Overview
 
-Successfully implemented a comprehensive UI/UX redesign for WikiPrepared (Kiwix USB Updater). The new design provides an intuitive, step-by-step flow for non-technical users to create and update offline Wikipedia USB sticks.
+Successfully implemented a comprehensive UI/UX redesign for WikiPrepared. The new design provides an intuitive, step-by-step flow for non-technical users to create and update offline Wikipedia USB sticks.
 
 ---
 

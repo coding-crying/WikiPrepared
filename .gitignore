@@ -13,6 +13,7 @@ build/
 Files Important/
 tools/offline_ai/build_gui_temp/
 Gemini_Generated_Image_*.png
+notes/
 
 # Electron
 *.log

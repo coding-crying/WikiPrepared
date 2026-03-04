@@ -60,7 +60,7 @@ electronAPI should now be available in renderer with methods: [Array of API meth
 
 ### In DevTools Console (Renderer Logs):
 ```
-Starting Kiwix USB Updater renderer...
+Starting WikiPrepared renderer...
 window.electronAPI defined: true
 window.electronAPI: Object { invoke: ƒ, send: ƒ, on: ƒ, ... }
 ```

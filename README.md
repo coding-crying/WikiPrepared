@@ -4,6 +4,13 @@ WikiPrepared is a cross-platform desktop app for building and maintaining offlin
 
 Its goal is to support long-term knowledge preservation and give people, schools, and communities more control over their own knowledge repositories instead of depending on always-online access.
 
+## Download
+
+Prebuilt releases (Linux):
+
+- AppImage and `.deb` are published on GitHub Releases.
+- See the latest release: https://github.com/coding-crying/WikiPrepared/releases
+
 ## What WikiPrepared does
 
 - Detects removable USB drives and shows capacity, free space, and filesystem details.
@@ -14,6 +21,12 @@ Its goal is to support long-term knowledge preservation and give people, schools
 - Scans existing USB sticks for installed `.zim` files and checks for update candidates.
 - Downloads and installs Kiwix readers for Windows, Linux, macOS, and Android.
 - Creates portable USB launchers (`START - Windows.bat`, `START - Mac.command`, `START - Linux.sh`).
+- Verifies downloads with SHA-256 when a server checksum is available. If a server checksum is not available, WikiPrepared computes and stores a local SHA-256 and marks the download as **unverified** in the UI.
+
+## Platform notes (important)
+
+- **Windows / macOS / Linux file compatibility:** For best cross-platform compatibility, use **exFAT**.
+- **exFAT formatting differences:** Some drives formatted on Linux can behave oddly on Windows (and vice versa). If you intend to use the USB across Windows and macOS, formatting the drive as exFAT on **Windows** is usually the safest option.
 
 ## Why this project exists
 
@@ -69,10 +82,10 @@ npm run dev
 
 ```bash
 npm run dev         # Start Electron app in development
-npm run build       # Build/package for current platform
-npm run build:win   # Build for Windows
-npm run build:linux # Build for Linux
-npm run build:mac   # Build for macOS
+npm run build       # Build/package (Electron Forge) for current platform
+npm run dist        # Build distributables (electron-builder): AppImage/.deb on Linux
+npm run dist:win    # Distributables for Windows (run on Windows)
+npm run dist:mac    # Distributables for macOS (run on macOS)
 npm run lint        # Lint source
 npm test            # Run tests
 ```
@@ -93,13 +106,13 @@ User-facing USB guidance is in `src/main/assets/README.txt`.
 - `src/renderer/` React UI screens, components, stores, styles
 - `src/shared/` cross-process constants and IPC channel definitions
 - `docs/` implementation notes, redesign docs, troubleshooting
-- `tools/offline_ai/` optional local AI experimentation utilities for ZIM question-answering
+  - Start here: `docs/README.md`
 
 ## Documentation map
 
-- `GETTING_STARTED.md` - developer setup walkthrough
-- `ARCHITECTURE.md` - architecture details
-- `FEATURES.md` - feature inventory and roadmap notes
+- `docs/DEVELOPMENT.md` - developer setup walkthrough
+- `docs/ARCHITECTURE.md` - architecture details
+- `docs/FEATURES.md` - feature inventory and roadmap notes
 - `docs/UI_FLOW_REDESIGN.md` - detailed UX flow specification
 - `docs/LOCAL_TESTING_REPORT.md` - test observations from prior runs
 

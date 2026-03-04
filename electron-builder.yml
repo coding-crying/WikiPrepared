@@ -98,8 +98,8 @@ deb:
 # Auto-update configuration (for future use)
 publish:
   provider: github
-  owner: wikiprepared
-  repo: wikiprepared
+  owner: coding-crying
+  repo: WikiPrepared
 
 # Compression
 compression: normal

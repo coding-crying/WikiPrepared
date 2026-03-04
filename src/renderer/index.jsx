@@ -3,7 +3,7 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import './styles/global.css';
 
-console.log('Starting Kiwix USB Updater renderer...');
+console.log('Starting WikiPrepared renderer...');
 console.log('window.electronAPI defined:', typeof window.electronAPI !== 'undefined');
 console.log('window.electronAPI:', window.electronAPI);
 console.log('Looking for root element:', document.getElementById('root'));
@@ -25,7 +25,7 @@ try {
       </React.StrictMode>
     );
 
-    console.log('Kiwix USB Updater renderer initialized successfully!');
+    console.log('WikiPrepared renderer initialized successfully!');
   }
 } catch (error) {
   console.error('Error initializing renderer:', error);

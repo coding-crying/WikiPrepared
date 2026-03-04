@@ -18,7 +18,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/wikiprepared/wikiprepared.git"
+    "url": "https://github.com/coding-crying/WikiPrepared.git"
   },
   "scripts": {
     "start": "electron-forge start",
@@ -105,9 +105,8 @@
         {
           "name": "@electron-forge/maker-squirrel",
           "config": {
-            "name": "kiwix_usb_updater",
-            "setupIcon": "./public/icons/icon.ico",
-            "iconUrl": "https://example.com/icon.ico"
+            "name": "wikiprepared",
+            "setupIcon": "./public/icons/icon.ico"
           }
         },
         {
@@ -121,8 +120,8 @@
           "name": "@electron-forge/maker-deb",
           "config": {
             "options": {
-              "maintainer": "Your Name",
-              "homepage": "https://github.com/yourusername/kiwix-usb-updater",
+              "maintainer": "WikiPrepared",
+              "homepage": "https://github.com/coding-crying/WikiPrepared",
               "icon": "./public/icons/icon.png"
             }
           }
@@ -131,7 +130,7 @@
           "name": "@electron-forge/maker-dmg",
           "config": {
             "icon": "./public/icons/icon.icns",
-            "name": "Kiwix USB Updater"
+            "name": "WikiPrepared"
           }
         }
       ],
