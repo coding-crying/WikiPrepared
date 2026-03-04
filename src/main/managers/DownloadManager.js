@@ -35,6 +35,26 @@ class DownloadManager {
     return match ? match[0].toLowerCase() : null;
   }
 
+  async calculateSha256OfFile(filePath) {
+    return new Promise((resolve, reject) => {
+      const hash = crypto.createHash('sha256');
+      const stream = fs.createReadStream(filePath);
+      stream.on('data', (chunk) => hash.update(chunk));
+      stream.on('end', () => resolve(hash.digest('hex')));
+      stream.on('error', reject);
+    });
+  }
+
+  async writeSha256Sidecar(filePath, sha256, filename) {
+    if (!sha256) return;
+    const name = filename || path.basename(filePath);
+    try {
+      await fs.writeFile(`${filePath}.sha256`, `${sha256}  ${name}\n`, 'utf8');
+    } catch (_e) {
+      // Non-fatal.
+    }
+  }
+
   async fetchExpectedSha256ForUrl(url) {
     if (!this.isHttpUrl(url)) return null;
 
@@ -315,16 +335,6 @@ class DownloadManager {
               }
             }
 
-            if (!expectedSha256) {
-              throw new Error('No SHA-256 checksum available for this ZIM. Refusing to mark download as complete.');
-            }
-
-            try {
-              await fs.writeFile(`${download.destination}.sha256`, `${expectedSha256}  ${download.filename}\n`, 'utf8');
-            } catch (e) {
-              // Non-fatal.
-            }
-
             download.status = DOWNLOAD_STATUS.VERIFYING;
             download.startTime = download.startTime || Date.now();
             download.downloadedSize = stats.size;
@@ -332,15 +342,24 @@ class DownloadManager {
             download.progress = 100;
             this.emitProgress(downloadId);
 
-            const isValid = await this.verifyDownload(downloadId, expectedSha256);
-            if (!isValid) {
-              // Delete the bad file so a subsequent retry can re-download.
-              try {
-                await fs.remove(download.destination);
-              } catch (e) {
-                // Ignore.
+            if (expectedSha256) {
+              await this.writeSha256Sidecar(download.destination, expectedSha256, download.filename);
+              const isValid = await this.verifyDownload(downloadId, expectedSha256);
+              if (!isValid) {
+                // Delete the bad file so a subsequent retry can re-download.
+                try {
+                  await fs.remove(download.destination);
+                } catch (_e) {
+                  // Ignore.
+                }
+                throw new Error('Checksum verification failed');
               }
-              throw new Error('Checksum verification failed');
+            } else {
+              // No server checksum available. Create a local baseline sidecar so future audits can detect bit-rot,
+              // and mark this download as "unverified against server".
+              const localSha = await this.calculateSha256OfFile(download.destination);
+              await this.writeSha256Sidecar(download.destination, localSha, download.filename);
+              download.warning = 'No server SHA-256 available; created a local checksum baseline (.sha256).';
             }
 
             download.status = DOWNLOAD_STATUS.COMPLETED;
@@ -355,6 +374,7 @@ class DownloadManager {
       download.status = DOWNLOAD_STATUS.DOWNLOADING;
       download.startTime = Date.now();
       download.error = null;
+      download.warning = null;
 
       // Create cancel token
       const CancelToken = axios.CancelToken;
@@ -362,6 +382,19 @@ class DownloadManager {
       download.cancelToken = source;
 
       console.log(`Starting download: ${download.filename}`);
+
+      // Try to fetch an expected checksum up-front so we know whether we can verify against the server.
+      let expectedSha256 = null;
+      const isZim = download.filename?.toLowerCase().endsWith('.zim');
+      if (isZim) {
+        expectedSha256 = download.zimInfo?.sha256 || null;
+        if (!expectedSha256) {
+          expectedSha256 = await this.fetchExpectedSha256ForUrl(download.url);
+          if (expectedSha256 && download.zimInfo) {
+            download.zimInfo.sha256 = expectedSha256;
+          }
+        }
+      }
 
       // Ensure destination directory exists
       // Only try to create if it doesn't exist to avoid EACCES on mount points
@@ -395,6 +428,18 @@ class DownloadManager {
         time: 1000, // Update every second
       });
 
+      // If there is no server checksum, hash the downloaded bytes and then verify the file on disk matches.
+      const downloadHash = (!expectedSha256 && isZim) ? crypto.createHash('sha256') : null;
+      if (downloadHash) {
+        progress.on('data', (chunk) => {
+          try {
+            downloadHash.update(chunk);
+          } catch (_e) {
+            // ignore
+          }
+        });
+      }
+
       progress.on('progress', (progressInfo) => {
         download.downloadedSize = progressInfo.transferred;
         download.progress = progressInfo.percentage;
@@ -416,32 +461,31 @@ class DownloadManager {
       });
 
       // Automatic SHA-256 verification for ZIM downloads (critical safeguard).
-      if (download.filename?.toLowerCase().endsWith('.zim')) {
-        let expectedSha256 = download.zimInfo?.sha256 || null;
-        if (!expectedSha256) {
-          expectedSha256 = await this.fetchExpectedSha256ForUrl(download.url);
-          if (expectedSha256 && download.zimInfo) {
-            download.zimInfo.sha256 = expectedSha256;
-          }
-        }
-
-        if (!expectedSha256) {
-          throw new Error('No SHA-256 checksum available for this ZIM. Refusing to mark download as complete.');
-        }
-
-        // Persist expected checksum alongside the downloaded file for later USB verification.
-        try {
-          await fs.writeFile(`${download.destination}.sha256`, `${expectedSha256}  ${download.filename}\n`, 'utf8');
-        } catch (e) {
-          // Non-fatal.
-        }
-
+      if (isZim) {
         download.status = DOWNLOAD_STATUS.VERIFYING;
         this.emitProgress(downloadId);
 
-        const isValid = await this.verifyDownload(downloadId, expectedSha256);
-        if (!isValid) {
-          throw new Error('Checksum verification failed');
+        if (expectedSha256) {
+          await this.writeSha256Sidecar(download.destination, expectedSha256, download.filename);
+
+          const isValid = await this.verifyDownload(downloadId, expectedSha256);
+          if (!isValid) {
+            throw new Error('Checksum verification failed');
+          }
+        } else {
+          // No server checksum: verify that the file written to disk matches what we downloaded.
+          const downloadedSha256 = downloadHash ? downloadHash.digest('hex') : null;
+          if (!downloadedSha256) {
+            // This shouldn't happen, but don't fail a completed download just because we couldn't compute the hash.
+            download.warning = 'No server SHA-256 available; download completed without verification.';
+          } else {
+            await this.writeSha256Sidecar(download.destination, downloadedSha256, download.filename);
+            const isValid = await this.verifyDownload(downloadId, downloadedSha256);
+            if (!isValid) {
+              throw new Error('Downloaded file did not match bytes written to disk');
+            }
+            download.warning = 'No server SHA-256 available; verified against the downloaded bytes and wrote .sha256 baseline.';
+          }
         }
       }
 
@@ -773,6 +817,7 @@ class DownloadManager {
         speed: download.speed,
         eta: download.eta,
         error: download.error,
+        warning: download.warning || null,
       });
     }
   }

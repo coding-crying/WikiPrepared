@@ -28,7 +28,7 @@ import { formatBytes, formatSpeed, formatDuration } from '../utils/formatters';
 /**
  * Individual download item component
  */
-function DownloadItem({ filename, status, progress, downloadedSize, totalSize, speed, eta }) {
+function DownloadItem({ filename, status, progress, downloadedSize, totalSize, speed, eta, warning }) {
   const getStatusIcon = () => {
     switch (status) {
       case 'completed':
@@ -46,7 +46,7 @@ function DownloadItem({ filename, status, progress, downloadedSize, totalSize, s
   const getStatusLabel = () => {
     switch (status) {
       case 'completed':
-        return 'Completed';
+        return warning ? 'Completed (Unverified)' : 'Completed';
       case 'error':
         return 'Failed';
       case 'verifying':
@@ -72,7 +72,17 @@ function DownloadItem({ filename, status, progress, downloadedSize, totalSize, s
         <Chip
           label={getStatusLabel()}
           size="small"
-          color={status === 'completed' ? 'success' : status === 'error' ? 'error' : status === 'verifying' ? 'info' : status === 'downloading' ? 'primary' : 'default'}
+          color={
+            status === 'completed'
+              ? (warning ? 'warning' : 'success')
+              : status === 'error'
+                ? 'error'
+                : status === 'verifying'
+                  ? 'info'
+                  : status === 'downloading'
+                    ? 'primary'
+                    : 'default'
+          }
           sx={{ ml: 1, height: 22, fontSize: '0.7rem' }}
         />
       </Box>
@@ -126,6 +136,12 @@ function DownloadItem({ filename, status, progress, downloadedSize, totalSize, s
       {(status === 'completed' || status === 'queued') && totalSize > 0 && (
         <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem', display: 'block', mt: 0.5 }}>
           {formatBytes(totalSize)}
+        </Typography>
+      )}
+
+      {status === 'completed' && warning && (
+        <Typography variant="caption" color="warning.main" sx={{ fontSize: '0.7rem', display: 'block', mt: 0.5 }}>
+          {warning}
         </Typography>
       )}
     </Box>
@@ -255,6 +271,10 @@ export default function DownloadProgressScreen() {
 
     return Math.min(100, (totalDownloaded / totalSize) * 100);
   }, [downloadProgress, selectedZims, selectedReaders, kiwixVersions]);
+
+  const hasUnverified = React.useMemo(() => {
+    return Object.values(downloadProgress).some((d) => d && d.status === 'completed' && d.warning);
+  }, [downloadProgress]);
 
   const handleDownloadError = useCallback((error) => {
     console.error('Download error:', error);
@@ -559,6 +579,15 @@ export default function DownloadProgressScreen() {
           </Typography>
         </Alert>
 
+        {hasUnverified && (
+          <Alert severity="warning" sx={{ mb: 2 }}>
+            <Typography variant="body2">
+              Some downloads completed without a server-provided SHA-256 checksum. The app created local `.sha256` baselines
+              so the USB Audit screen can detect future corruption, but these files were not verified against the server.
+            </Typography>
+          </Alert>
+        )}
+
         {/* Download location info for local downloads */}
         {downloadLocation && downloadStrategy !== DOWNLOAD_STRATEGIES.DIRECT_TO_USB && (
           <Paper variant="outlined" sx={{ p: 2, mb: 2, bgcolor: 'rgba(255, 255, 255, 0.02)' }}>
@@ -607,6 +636,7 @@ export default function DownloadProgressScreen() {
                   totalSize={progress.totalSize || zim.size || 0}
                   speed={progress.speed || 0}
                   eta={progress.eta || 0}
+                  warning={progress.warning || null}
                 />
               );
             })}
@@ -626,6 +656,7 @@ export default function DownloadProgressScreen() {
                   totalSize={progress.totalSize || versionInfo?.size || 0}
                   speed={progress.speed || 0}
                   eta={progress.eta || 0}
+                  warning={progress.warning || null}
                 />
               );
             })}

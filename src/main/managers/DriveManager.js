@@ -11,6 +11,7 @@ class DriveManager {
     this.watchInterval = null;
     this.watchCallback = null;
     this.lastDriveList = [];
+    this._ejectPromises = new Map(); // blockDevice -> Promise
   }
 
   normalizeFilesystem(filesystem) {
@@ -848,12 +849,6 @@ class DriveManager {
    * @returns {Promise<Object>} Result
    */
   async ejectDrive(drivePath) {
-    // Capture callback before stopping
-    const savedCallback = this.watchCallback;
-
-    // Stop watching drives to prevent race conditions/file locks during ejection
-    this.stopWatching();
-
     const os = require('os');
     const { exec } = require('child_process');
     const util = require('util');
@@ -865,16 +860,6 @@ class DriveManager {
 
     try {
       if (platform === 'linux') {
-        console.log('Starting Linux eject sequence...');
-
-        // First sync to flush buffers (with timeout)
-        console.log('Syncing filesystem...');
-        await Promise.race([
-          execAsync('sync'),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Sync timeout')), 10000))
-        ]);
-        console.log('Sync completed');
-
         // Resolve parent block device safely (handles /dev/sda1, /dev/nvme0n1p1, etc.)
         let blockDevice = null;
         if (drivePath.startsWith('/dev/')) {
@@ -882,7 +867,7 @@ class DriveManager {
             const { stdout } = await execAsync(`lsblk -no pkname ${drivePath}`);
             const parent = stdout.trim().split('\n')[0].trim();
             if (parent) blockDevice = parent;
-          } catch (e) {
+          } catch (_e) {
             // Ignore
           }
 
@@ -897,24 +882,59 @@ class DriveManager {
         if (!this.isSafeLinuxDeviceName(blockDevice)) {
           throw new Error(`Unsafe block device: ${blockDevice}`);
         }
-        console.log('Target block device:', blockDevice);
 
-        // Try udisksctl first (works without root on most modern Linux)
-        let unmountedAny = false;
+        // Single-flight per block device to avoid concurrent eject races.
+        if (this._ejectPromises.has(blockDevice)) {
+          return await this._ejectPromises.get(blockDevice);
+        }
 
-        // First unmount all partitions on the device
-        try {
-          console.log('Listing partitions...');
-          const { stdout } = await Promise.race([
-            execAsync(`lsblk -ln -o NAME /dev/${blockDevice} 2>/dev/null || echo "${blockDevice}"`),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('lsblk timeout')), 5000))
+        const savedCallback = this.watchCallback;
+        const promise = (async () => {
+          // Stop watching drives to prevent race conditions/file locks during ejection
+          this.stopWatching();
+
+          console.log('Starting Linux eject sequence...');
+
+          // First sync to flush buffers (with timeout)
+          console.log('Syncing filesystem...');
+          await Promise.race([
+            execAsync('sync'),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Sync timeout')), 10000))
           ]);
-          const partitions = stdout.trim().split('\n').filter(p => p.trim());
-          console.log('Found partitions to unmount:', partitions);
+          console.log('Sync completed');
 
-          for (const partition of partitions) {
-            if (!this.isSafeLinuxDeviceName(partition.trim())) continue;
-            const partPath = `/dev/${partition.trim()}`;
+          console.log('Target block device:', blockDevice);
+
+          // Determine mounted partitions and unmount those only.
+          let mountedPartitions = [];
+          try {
+            console.log('Listing mounted partitions...');
+            const { stdout } = await Promise.race([
+              execAsync(`lsblk -ln -o NAME,MOUNTPOINT /dev/${blockDevice} 2>/dev/null || echo ""`),
+              new Promise((_, reject) => setTimeout(() => reject(new Error('lsblk timeout')), 5000))
+            ]);
+
+            const lines = stdout.trim().split('\n').map((l) => l.trim()).filter(Boolean);
+            mountedPartitions = lines
+              .map((line) => {
+                const parts = line.split(/\s+/);
+                const name = parts[0] || '';
+                const mountpoint = parts.slice(1).join(' ').trim();
+                return { name, mountpoint };
+              })
+              .filter((p) => this.isSafeLinuxDeviceName(p.name))
+              .filter((p) => p.name !== blockDevice) // never try to unmount /dev/sda itself
+              .filter((p) => Boolean(p.mountpoint)); // only mounted entries
+
+            console.log('Mounted partitions:', mountedPartitions.map((p) => p.name));
+          } catch (lsblkError) {
+            console.log('Failed to list partitions:', lsblkError.message);
+          }
+
+          let unmountedAny = false;
+
+          for (const p of mountedPartitions) {
+            const partPath = `/dev/${p.name}`;
             try {
               console.log(`Unmounting ${partPath}...`);
               await Promise.race([
@@ -924,96 +944,137 @@ class DriveManager {
               console.log(`Successfully unmounted ${partPath}`);
               unmountedAny = true;
             } catch (e) {
-              console.log(`Standard unmount failed for ${partPath}:`, e.message);
+              const msg = e?.message || String(e);
+              // Benign: already unmounted by another process / retry.
+              if (msg.includes('NotMounted') || msg.toLowerCase().includes('not mounted')) {
+                console.log(`${partPath} already unmounted`);
+                continue;
+              }
+
+              console.log(`Standard unmount failed for ${partPath}:`, msg);
 
               // Attempt force unmount via udisksctl (no root needed usually)
               try {
-                 console.log(`Attempting force unmount for ${partPath}...`);
-                 await Promise.race([
-                   execAsync(`udisksctl unmount -b ${partPath} --force`),
-                   new Promise((_, reject) => setTimeout(() => reject(new Error('Force unmount timeout')), 10000))
-                 ]);
-                 console.log(`Force unmount successful for ${partPath}`);
-                 unmountedAny = true;
-                 continue;
+                console.log(`Attempting force unmount for ${partPath}...`);
+                await Promise.race([
+                  execAsync(`udisksctl unmount -b ${partPath} --force`),
+                  new Promise((_, reject) => setTimeout(() => reject(new Error('Force unmount timeout')), 10000))
+                ]);
+                console.log(`Force unmount successful for ${partPath}`);
+                unmountedAny = true;
+                continue;
               } catch (forceErr) {
-                 console.log(`Force unmount failed: ${forceErr.message}`);
+                console.log(`Force unmount failed: ${forceErr.message}`);
               }
 
               // If still busy, try lazy unmount (requires root)
-              if (e.message.includes('busy') || e.message.includes('target is busy')) {
-                 console.log(`Device busy, attempting lazy unmount for ${partPath}...`);
-                 try {
-                   await Promise.race([
-                     execAsync(`pkexec umount -l ${partPath}`),
-                     new Promise((_, reject) => setTimeout(() => reject(new Error('Lazy unmount timeout')), 15000))
-                   ]);
-                   console.log(`Lazy unmount successful for ${partPath}`);
-                   unmountedAny = true;
-                 } catch (lazyErr) {
-                   console.error(`Lazy unmount failed: ${lazyErr.message}`);
-                 }
+              if (msg.includes('busy') || msg.includes('target is busy')) {
+                console.log(`Device busy, attempting lazy unmount for ${partPath}...`);
+                try {
+                  await Promise.race([
+                    execAsync(`pkexec umount -l ${partPath}`),
+                    new Promise((_, reject) => setTimeout(() => reject(new Error('Lazy unmount timeout')), 15000))
+                  ]);
+                  console.log(`Lazy unmount successful for ${partPath}`);
+                  unmountedAny = true;
+                } catch (lazyErr) {
+                  console.error(`Lazy unmount failed: ${lazyErr.message}`);
+                }
               }
             }
           }
-        } catch (lsblkError) {
-          console.log('Failed to list partitions:', lsblkError.message);
-        }
 
-        // If we successfully unmounted, we're done - skip the problematic power-off
-        if (unmountedAny) {
-          console.log('Drive unmounted successfully, skipping power-off');
-          return { success: true, message: 'Drive unmounted. You can safely remove it now.' };
-        }
+          // If nothing was mounted, consider it already safe to remove.
+          if (mountedPartitions.length === 0) {
+            return { success: true, message: 'Drive is not mounted. You can safely remove it now.' };
+          }
 
-        // Try to power off the drive only if unmount failed (with timeout)
-        try {
-          console.log('Attempting power-off...');
-          await Promise.race([
-            execAsync(`udisksctl power-off -b /dev/${blockDevice}`),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('Power-off timeout after 10s')), 10000))
-          ]);
-          console.log('Drive powered off successfully');
-          return { success: true, message: 'Drive ejected safely. You can now remove it.' };
-        } catch (powerOffError) {
-          console.log('Power-off failed or timed out:', powerOffError.message);
-          // Nothing worked, throw an error
-          throw new Error('Could not unmount or eject drive. Please unmount manually before removing.');
-        }
-      } else if (platform === 'darwin') {
-        // macOS
-        let target = drivePath;
-        try {
-          const info = this.diskutilInfoSync(drivePath);
-          target = info.wholeDisk || info.deviceNode || drivePath;
-        } catch (e) {
-          // Ignore, fall back to the provided path.
-        }
-
-        try {
-          await execAsync(`diskutil eject "${target}"`);
-        } catch (e) {
-          await execAsync(`diskutil unmountDisk "${target}"`);
-        }
-        return { success: true, message: 'Drive ejected safely. You can now remove it.' };
-      } else if (platform === 'win32') {
-        // Windows - use PowerShell to eject
-        const driveLetter = await this.resolveWindowsDriveLetter(drivePath);
-        if (driveLetter) {
-          // Use PowerShell to eject the drive
+          // Try to power off, but don't fail the whole operation if unmount succeeded.
           try {
-            await execAsync(`powershell -NoProfile -Command "(New-Object -comObject Shell.Application).NameSpace(17).ParseName('${driveLetter}').InvokeVerb('Eject')"`);
-          } catch (e) {
-            // Fallback: dismount/remove mount point (often requires admin).
-            try {
-              await execAsync(`cmd /c mountvol ${driveLetter} /p`);
-            } catch (e2) {
-              throw new Error(`Windows eject failed. Try ejecting via File Explorer. ${e2.message}`);
+            console.log('Attempting power-off...');
+            await Promise.race([
+              execAsync(`udisksctl power-off -b /dev/${blockDevice}`),
+              new Promise((_, reject) => setTimeout(() => reject(new Error('Power-off timeout after 10s')), 10000))
+            ]);
+            console.log('Drive powered off successfully');
+            return { success: true, message: 'Drive ejected safely. You can now remove it.' };
+          } catch (powerOffError) {
+            const msg = powerOffError?.message || String(powerOffError);
+            // If the device disappeared, that's effectively "powered off".
+            if (msg.includes('No such file or directory') || msg.toLowerCase().includes('no such file')) {
+              return { success: true, message: 'Drive unmounted and no longer present. You can safely remove it now.' };
             }
+
+            if (unmountedAny) {
+              console.log('Power-off failed after unmount (non-fatal):', msg);
+              return { success: true, message: 'Drive unmounted. You can safely remove it now.' };
+            }
+
+            console.log('Power-off failed or timed out:', msg);
+            throw new Error('Could not unmount or eject drive. Please unmount manually before removing.');
+          }
+        })().finally(() => {
+          this._ejectPromises.delete(blockDevice);
+          if (savedCallback) {
+            console.log('Restarting drive watching...');
+            this.startWatching(savedCallback);
+          }
+        });
+
+        this._ejectPromises.set(blockDevice, promise);
+        return await promise;
+      } else if (platform === 'darwin') {
+        const savedCallback = this.watchCallback;
+        this.stopWatching();
+        try {
+          // macOS
+          let target = drivePath;
+          try {
+            const info = this.diskutilInfoSync(drivePath);
+            target = info.wholeDisk || info.deviceNode || drivePath;
+          } catch (e) {
+            // Ignore, fall back to the provided path.
+          }
+
+          try {
+            await execAsync(`diskutil eject "${target}"`);
+          } catch (e) {
+            await execAsync(`diskutil unmountDisk "${target}"`);
           }
           return { success: true, message: 'Drive ejected safely. You can now remove it.' };
-        } else {
-          throw new Error('Could not determine drive letter');
+        } finally {
+          if (savedCallback) {
+            console.log('Restarting drive watching...');
+            this.startWatching(savedCallback);
+          }
+        }
+      } else if (platform === 'win32') {
+        const savedCallback = this.watchCallback;
+        this.stopWatching();
+        try {
+          // Windows - use PowerShell to eject
+          const driveLetter = await this.resolveWindowsDriveLetter(drivePath);
+          if (driveLetter) {
+            // Use PowerShell to eject the drive
+            try {
+              await execAsync(`powershell -NoProfile -Command "(New-Object -comObject Shell.Application).NameSpace(17).ParseName('${driveLetter}').InvokeVerb('Eject')"`);
+            } catch (e) {
+              // Fallback: dismount/remove mount point (often requires admin).
+              try {
+                await execAsync(`cmd /c mountvol ${driveLetter} /p`);
+              } catch (e2) {
+                throw new Error(`Windows eject failed. Try ejecting via File Explorer. ${e2.message}`);
+              }
+            }
+            return { success: true, message: 'Drive ejected safely. You can now remove it.' };
+          } else {
+            throw new Error('Could not determine drive letter');
+          }
+        } finally {
+          if (savedCallback) {
+            console.log('Restarting drive watching...');
+            this.startWatching(savedCallback);
+          }
         }
       } else {
         throw new Error(`Unsupported platform: ${platform}`);
@@ -1021,12 +1082,6 @@ class DriveManager {
     } catch (error) {
       console.error('Eject error:', error);
       throw new Error(`Failed to eject drive: ${error.message}`);
-    } finally {
-      // Restart watching if it was active
-      if (savedCallback) {
-        console.log('Restarting drive watching...');
-        this.startWatching(savedCallback);
-      }
     }
   }
 }

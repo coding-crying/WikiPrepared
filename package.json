@@ -1,6 +1,6 @@
 {
   "name": "wikiprepared",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Create offline Wikipedia USB drives with WikiPrepared - download and manage Wikipedia content for offline access",
   "main": "src/main/index.js",
   "author": {

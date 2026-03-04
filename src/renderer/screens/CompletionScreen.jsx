@@ -5,7 +5,9 @@ import {
   Typography,
   Paper,
   Button,
-  Divider
+  Divider,
+  Alert,
+  CircularProgress
 } from '@mui/material';
 import {
   CheckCircle as CheckIcon,
@@ -41,20 +43,31 @@ export default function CompletionScreen() {
   
   const [isCleaning, setIsCleaning] = React.useState(false);
   const [isCleaned, setIsCleaned] = React.useState(false);
+  const [isEjecting, setIsEjecting] = React.useState(false);
+  const [ejectResult, setEjectResult] = React.useState(null); // { severity, message }
 
   const handleEjectUSB = async () => {
     if (!selectedDrive) return;
+    if (isEjecting) return;
 
     try {
+      setIsEjecting(true);
+      setEjectResult({ severity: 'info', message: 'Ejecting USB drive... Please wait.' });
       const platform = window.electronAPI?.platform;
       const ejectTarget = platform === 'win32'
         ? (selectedDrive.mountpoints?.[0]?.path || selectedDrive.mountpoint || selectedDrive.device)
         : (selectedDrive.device || selectedDrive.mountpoints?.[0]?.path || selectedDrive.mountpoint);
-      await window.electronAPI.invoke('drives:eject', ejectTarget);
-      showToast('USB drive ejected safely. You can now remove it.', 'success');
+      const res = await window.electronAPI.invoke('drives:eject', ejectTarget);
+      const msg = res?.message || 'USB drive ejected safely. You can now remove it.';
+      setEjectResult({ severity: 'success', message: msg });
+      showToast(msg, 'success');
     } catch (error) {
       console.error('Failed to eject drive:', error);
-      showToast(`Failed to eject: ${error.message}`, 'error');
+      const msg = `Failed to eject: ${error.message}`;
+      setEjectResult({ severity: 'error', message: msg });
+      showToast(msg, 'error');
+    } finally {
+      setIsEjecting(false);
     }
   };
 
@@ -185,7 +198,9 @@ export default function CompletionScreen() {
                 { 
                   step: '1', 
                   title: 'Eject your USB drive', 
-                  desc: selectedDrive ? 'Use the button below' : 'Files saved to your computer' 
+                  desc: selectedDrive
+                    ? (isEjecting ? 'Ejecting now... please wait' : (ejectResult?.severity === 'success' ? 'Safe to remove' : 'Use the button below'))
+                    : 'Files saved to your computer'
                 },
                 { 
                   step: '2', 
@@ -229,6 +244,12 @@ export default function CompletionScreen() {
                 </Box>
               ))}
             </Box>
+
+            {selectedDrive && ejectResult && (
+              <Alert severity={ejectResult.severity} sx={{ mt: 2 }}>
+                {ejectResult.message}
+              </Alert>
+            )}
           </Paper>
         </Box>
 
@@ -238,11 +259,12 @@ export default function CompletionScreen() {
             <Button
               variant="contained"
               color="primary"
-              startIcon={<UsbIcon />}
+              startIcon={isEjecting ? <CircularProgress size={18} color="inherit" /> : <UsbIcon />}
               onClick={handleEjectUSB}
               size="large"
+              disabled={isEjecting}
             >
-              Safely Eject USB
+              {isEjecting ? 'Ejecting…' : 'Safely Eject USB'}
             </Button>
           ) : (
             <Button
@@ -251,6 +273,7 @@ export default function CompletionScreen() {
               startIcon={<FolderIcon />}
               onClick={handleOpenFolder}
               size="large"
+              disabled={isEjecting}
             >
               Open Download Folder
             </Button>
@@ -259,6 +282,7 @@ export default function CompletionScreen() {
             variant="outlined"
             onClick={handleStartOver}
             size="large"
+            disabled={isEjecting}
           >
             Create Another Stick
           </Button>
@@ -270,7 +294,7 @@ export default function CompletionScreen() {
               color="error"
               startIcon={<DeleteIcon />}
               onClick={handleCleanup}
-              disabled={isCleaning || isCleaned}
+              disabled={isEjecting || isCleaning || isCleaned}
               size="large"
             >
               {isCleaning ? 'Deleting...' : isCleaned ? 'Files Deleted' : 'Delete Local Files'}
