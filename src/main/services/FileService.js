@@ -151,7 +151,7 @@ class FileService {
   }
 
   /**
-   * Prepare USB folder structure and copy launcher files
+   * Prepare USB folder structure and copy visible helper files
    * @param {string} usbPath - USB drive path
    * @returns {Promise<void>}
    */
@@ -169,20 +169,6 @@ class FileService {
     const batDest = path.join(usbPath, 'START - Windows.bat');
     await fs.copy(batSource, batDest);
     console.log('Copied Windows launcher');
-
-    // Copy Mac launcher
-    const macSource = this.getAssetPath('START - Mac.command');
-    const macDest = path.join(usbPath, 'START - Mac.command');
-    await fs.copy(macSource, macDest);
-    await fs.chmod(macDest, 0o755);
-    console.log('Copied Mac launcher');
-
-    // Copy Linux launcher
-    const linuxSource = this.getAssetPath('START - Linux.sh');
-    const linuxDest = path.join(usbPath, 'START - Linux.sh');
-    await fs.copy(linuxSource, linuxDest);
-    await fs.chmod(linuxDest, 0o755);
-    console.log('Copied Linux launcher');
 
     // Copy README
     const readmeSource = this.getAssetPath('README.txt');
@@ -219,8 +205,8 @@ class FileService {
 
       case 'macos':
       case 'mac': {
-        // Mac - single .dmg file to .data/
-        const destFile = path.join(dataDir, 'kiwix-macos.dmg');
+        // Mac - keep the installer visible in the USB root.
+        const destFile = path.join(usbPath, 'Install Kiwix for Mac.dmg');
         await fs.copy(sourcePath, destFile);
         console.log(`Copied Mac installer to: ${destFile}`);
         break;
@@ -323,8 +309,8 @@ class FileService {
     // Check for launchers
     const launcherFiles = [
       'START - Windows.bat',
-      'START - Mac.command',
-      'START - Linux.sh',
+      'START - Linux.AppImage',
+      'Install Kiwix for Mac.dmg',
       'README.txt'
     ];
     for (const launcher of launcherFiles) {
@@ -342,19 +328,23 @@ class FileService {
         summary.readers.push({ name: 'kiwix-windows/', platform: 'windows' });
       }
 
-      // Check Mac DMG
-      const macFile = path.join(dataDir, 'kiwix-macos.dmg');
+      // Check Mac DMG (new visible root location first, then legacy hidden path)
+      const macFile = await fs.pathExists(path.join(usbPath, 'Install Kiwix for Mac.dmg'))
+        ? path.join(usbPath, 'Install Kiwix for Mac.dmg')
+        : path.join(dataDir, 'kiwix-macos.dmg');
       if (await fs.pathExists(macFile)) {
         const stats = await fs.stat(macFile);
-        summary.readers.push({ name: 'kiwix-macos.dmg', size: stats.size, platform: 'macos' });
+        summary.readers.push({ name: path.basename(macFile), size: stats.size, platform: 'macos' });
         summary.totalSize += stats.size;
       }
 
-      // Check Linux AppImage
-      const linuxFile = path.join(dataDir, 'kiwix-linux.AppImage');
+      // Check Linux AppImage (new visible root location first, then legacy hidden path)
+      const linuxFile = await fs.pathExists(path.join(usbPath, 'START - Linux.AppImage'))
+        ? path.join(usbPath, 'START - Linux.AppImage')
+        : path.join(dataDir, 'kiwix-linux.AppImage');
       if (await fs.pathExists(linuxFile)) {
         const stats = await fs.stat(linuxFile);
-        summary.readers.push({ name: 'kiwix-linux.AppImage', size: stats.size, platform: 'linux' });
+        summary.readers.push({ name: path.basename(linuxFile), size: stats.size, platform: 'linux' });
         summary.totalSize += stats.size;
       }
     }

@@ -252,6 +252,76 @@ class KiwixManager {
     }
   }
 
+  async findWindowsExecutableDir(rootDir) {
+    const entries = await fs.readdir(rootDir);
+
+    for (const entry of entries) {
+      const fullPath = path.join(rootDir, entry);
+      const stats = await fs.stat(fullPath);
+
+      if (stats.isDirectory()) {
+        const candidate = path.join(fullPath, 'kiwix-desktop.exe');
+        if (await fs.pathExists(candidate)) {
+          return fullPath;
+        }
+      }
+    }
+
+    const directExe = path.join(rootDir, 'kiwix-desktop.exe');
+    if (await fs.pathExists(directExe)) {
+      return rootDir;
+    }
+
+    return null;
+  }
+
+  async configurePortableLibrary(platform, usbPath, installPath) {
+    const libraryPath = path.join(usbPath, 'Library');
+
+    if (!(await fs.pathExists(libraryPath))) {
+      return;
+    }
+
+    let portableMarkerPath = null;
+    let portableDataDir = null;
+
+    if (platform === KIWIX_PLATFORMS.WINDOWS) {
+      const executableDir = await this.findWindowsExecutableDir(installPath);
+      if (!executableDir) {
+        console.warn('Could not find kiwix-desktop.exe; skipping Windows portable library setup');
+        return;
+      }
+
+      portableMarkerPath = path.join(executableDir, '.portable');
+      portableDataDir = path.join(executableDir, 'data');
+    } else if (platform === KIWIX_PLATFORMS.LINUX) {
+      const executableDir = path.dirname(installPath);
+      portableMarkerPath = path.join(executableDir, '.portable');
+      portableDataDir = path.join(executableDir, 'data');
+    } else {
+      return;
+    }
+
+    await fs.ensureDir(portableDataDir);
+    await fs.writeFile(portableMarkerPath, '');
+    await this.platformLauncherService.createLibraryXML(portableDataDir, libraryPath);
+    console.log(`Configured portable Kiwix library for ${platform}`);
+  }
+
+  async refreshPortableLibraries(usbPath) {
+    const dataDir = path.join(usbPath, '.data');
+
+    const windowsInstallDir = path.join(dataDir, 'kiwix-windows');
+    if (await fs.pathExists(windowsInstallDir)) {
+      await this.configurePortableLibrary(KIWIX_PLATFORMS.WINDOWS, usbPath, windowsInstallDir);
+    }
+
+    const linuxInstallPath = path.join(usbPath, 'START - Linux.AppImage');
+    if (await fs.pathExists(linuxInstallPath)) {
+      await this.configurePortableLibrary(KIWIX_PLATFORMS.LINUX, usbPath, linuxInstallPath);
+    }
+  }
+
   /**
    * Detect installed Kiwix readers on a USB drive
    * @param {string} usbPath - USB drive path
@@ -474,10 +544,6 @@ class KiwixManager {
         await this.extractAndSetupPortable(downloadResult.path, winDir);
         installPath = winDir;
 
-        // Create .portable file for portable mode
-        const portableFile = path.join(winDir, '.portable');
-        await fs.writeFile(portableFile, '');
-
       } else if (platform === KIWIX_PLATFORMS.LINUX) {
         // Linux - copy AppImage to root with consistent naming
         const targetPath = path.join(usbPath, 'START - Linux.AppImage');
@@ -487,8 +553,8 @@ class KiwixManager {
         console.log('Made Linux AppImage executable');
 
       } else if (platform === KIWIX_PLATFORMS.MAC) {
-        // Mac - copy DMG to .data/kiwix-macos.dmg
-        const targetPath = path.join(dataDir, 'kiwix-macos.dmg');
+        // Mac - keep the installer visible in the USB root.
+        const targetPath = path.join(usbPath, 'Install Kiwix for Mac.dmg');
         await fs.copy(downloadResult.path, targetPath);
         installPath = targetPath;
 
@@ -505,6 +571,8 @@ class KiwixManager {
       } catch (launcherErr) {
         console.warn('Failed to create launchers (continuing):', launcherErr.message);
       }
+
+      await this.configurePortableLibrary(platform, usbPath, installPath);
 
       console.log(`Installed Kiwix reader to: ${installPath}`);
 

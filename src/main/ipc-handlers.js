@@ -18,6 +18,41 @@ const updateService = new UpdateService();
 const fileService = new FileService();
 const usbAuditService = new USBAuditService();
 
+function getUsbRootFromDownloadDestination(destination) {
+  if (!destination) {
+    return null;
+  }
+
+  const normalized = path.normalize(destination);
+  const librarySegment = `${path.sep}Library${path.sep}`;
+  const libraryIndex = normalized.indexOf(librarySegment);
+
+  if (libraryIndex === -1) {
+    return null;
+  }
+
+  return normalized.slice(0, libraryIndex);
+}
+
+async function refreshPortableLibraryForDownload(progress) {
+  if (progress?.status !== 'completed') {
+    return;
+  }
+
+  const download = downloadManager.getDownload(progress.id);
+  const usbRoot = getUsbRootFromDownloadDestination(download?.destination);
+
+  if (!usbRoot) {
+    return;
+  }
+
+  try {
+    await kiwixManager.refreshPortableLibraries(usbRoot);
+  } catch (error) {
+    console.warn(`Failed to refresh portable library for ${progress.filename}:`, error.message);
+  }
+}
+
 /**
  * Set up all IPC communication handlers
  */
@@ -250,6 +285,7 @@ function setupIpcHandlers() {
       const allDownloads = downloadManager.getAllDownloads();
       allDownloads.forEach((download) => {
         downloadManager.onProgress(download.id, (progress) => {
+          refreshPortableLibraryForDownload(progress);
           const windows = require('electron').BrowserWindow.getAllWindows();
           windows.forEach((window) => {
             window.webContents.send(IPC_CHANNELS.DOWNLOAD_PROGRESS, progress);
@@ -543,6 +579,8 @@ function setupIpcHandlers() {
           }
         }
       }
+
+      await kiwixManager.refreshPortableLibraries(destination);
 
       console.log('Transfer completed successfully');
 

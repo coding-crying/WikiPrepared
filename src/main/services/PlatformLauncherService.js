@@ -9,10 +9,19 @@ const execPromise = util.promisify(exec);
  *
  * New clean structure:
  * - Readers hidden in .data/ folder
- * - Simple launchers: START - Windows.bat, START - Mac.command, START - Linux.sh
- * - Android APK visible in root as "Install on Android.apk"
+ * - Windows keeps a small launcher to find the portable EXE
+ * - Linux AppImage and macOS DMG stay visible in the USB root
+ * - Android APK stays visible in the USB root
  */
 class PlatformLauncherService {
+  escapeXml(value) {
+    return String(value)
+      .replace(/&/g, '&amp;')
+      .replace(/"/g, '&quot;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/'/g, '&apos;');
+  }
 
   /**
    * Create all platform launchers on USB
@@ -30,13 +39,6 @@ class PlatformLauncherService {
     }
 
     try {
-      await this.createMacLauncher(usbPath);
-      console.log('Created Mac launcher');
-    } catch (error) {
-      console.log('Mac launcher creation failed:', error.message);
-    }
-
-    try {
       await this.createReadme(usbPath);
       console.log('Created README');
     } catch (error) {
@@ -46,19 +48,18 @@ class PlatformLauncherService {
 
   /**
    * Create Windows batch launcher
-   * Points to .data/kiwix-windows/ folder and passes ZIM files as arguments
+   * Points to the portable Kiwix Desktop installation.
    * @param {string} usbPath - USB drive path
    */
   async createWindowsLauncher(usbPath) {
     const batPath = path.join(usbPath, 'START - Windows.bat');
 
-    // Find the kiwix-desktop.exe and pass all .zim files from Library folder
+    // Find the Kiwix executable inside the extracted portable reader folder.
     const scriptContent = `@echo off
 setlocal enabledelayedexpansion
 
 :: Find kiwix-desktop.exe in .data\\kiwix-windows
 set "KIWIX_DIR=%~dp0.data\\kiwix-windows"
-set "LIBRARY_FOLDER=%~dp0Library"
 set "KIWIX_EXE="
 
 :: Look for kiwix-desktop.exe in subdirectories
@@ -80,78 +81,13 @@ pause
 exit /b 1
 
 :found
-:: Collect all .zim files from Library folder
-set "ZIM_FILES="
-for %%F in ("%LIBRARY_FOLDER%\\*.zim") do (
-    set "ZIM_FILES=!ZIM_FILES! "%%F""
-)
-
-:: Launch Kiwix with all ZIM files
-if defined ZIM_FILES (
-    start "" "%KIWIX_EXE%" %ZIM_FILES%
-) else (
-    start "" "%KIWIX_EXE%"
-)
+:: Launch portable Kiwix. The prebuilt library.xml handles the ZIM catalog.
+start "" "%KIWIX_EXE%"
 exit /b 0
 `;
 
     await fs.writeFile(batPath, scriptContent);
     console.log('✓ Created Windows launcher');
-  }
-
-  /**
-   * Create macOS launcher (.command script)
-   * Points to .data/kiwix-macos.dmg and opens ZIM files directly
-   * @param {string} usbPath - USB drive path
-   */
-  async createMacLauncher(usbPath) {
-    const commandPath = path.join(usbPath, 'START - Mac.command');
-
-    const scriptContent = `#!/bin/bash
-# WikiPrepared - macOS Kiwix Reader Launcher
-
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-DMG_PATH="$SCRIPT_DIR/.data/kiwix-macos.dmg"
-LIBRARY_FOLDER="$SCRIPT_DIR/Library"
-
-# Check if Kiwix is already installed
-if [ -d "/Applications/Kiwix.app" ]; then
-    echo "Launching Kiwix with your Wikipedia files..."
-
-    # Find all .zim files and open them with Kiwix
-    ZIM_FILES=$(find "$LIBRARY_FOLDER" -name "*.zim" 2>/dev/null)
-
-    if [ -n "$ZIM_FILES" ]; then
-        # Open each ZIM file with Kiwix (this adds them to the library)
-        echo "$ZIM_FILES" | while read zim; do
-            open -a Kiwix "$zim"
-        done
-    else
-        open -a Kiwix
-    fi
-    exit 0
-fi
-
-# Check if DMG exists
-if [ ! -f "$DMG_PATH" ]; then
-    echo "ERROR: Kiwix installer not found at $DMG_PATH"
-    echo "Please run the WikiPrepared setup first."
-    read -p "Press Enter to exit..."
-    exit 1
-fi
-
-echo "Kiwix not installed yet. Opening the installer..."
-open "$DMG_PATH"
-echo ""
-echo "To install:"
-echo "1. Drag Kiwix to your Applications folder"
-echo "2. Run this launcher again"
-echo ""
-read -p "Press Enter to exit..."
-`;
-
-    await fs.writeFile(commandPath, scriptContent, { mode: 0o755 });
-    console.log('✓ Created macOS launcher');
   }
 
   /**
@@ -170,15 +106,14 @@ This USB contains Wikipedia content that works offline on any device.
 WINDOWS
 -------
 Double-click "START - Windows.bat" to launch the reader.
-Then drag files from the "Library" folder into Kiwix.
+Your offline library should appear automatically.
 
 
 MAC
 ---
-1. Double-click "START - Mac.command"
-2. If Kiwix isn't installed, it will open the installer
-3. Drag Kiwix to Applications, then run the launcher again
-4. Drag files from the "Library" folder into Kiwix
+1. Double-click "Install Kiwix for Mac.dmg"
+2. Drag Kiwix to Applications
+3. Open Kiwix and drag files from the "Library" folder into it
 
 
 LINUX
@@ -186,8 +121,8 @@ LINUX
 1. Right-click "START - Linux.AppImage" > Properties > Permissions
 2. Check "Allow executing file as program"
 3. Double-click to run, or run from terminal:
-   ./"START - Linux.AppImage" Library/*.zim
-4. This will open Kiwix with your Wikipedia files loaded
+   ./"START - Linux.AppImage"
+4. Your offline library should appear automatically
 
 
 ANDROID
@@ -200,8 +135,10 @@ ANDROID
 
 ADDING CONTENT TO KIWIX
 -----------------------
-After launching Kiwix, drag .zim files from the "Library"
-folder into the Kiwix window, or use File > Open.
+On Windows and Linux, WikiPrepared prebuilds the Kiwix library
+so your content should appear automatically on first launch.
+If you add or remove .zim files manually later, run WikiPrepared
+again to refresh the portable library.
 
 
 Created with WikiPrepared - wikiprepared.com
@@ -224,7 +161,7 @@ Version=1.0
 Type=Application
 Name=Kiwix Reader (WikiPrepared)
 Comment=Launch Kiwix Offline Wikipedia Reader
-Exec=bash -c 'cd "$(dirname "%k")" && ./.data/kiwix-linux.AppImage 2>/dev/null'
+Exec=bash -c 'cd "$(dirname "%k")" && ./"START - Linux.AppImage" 2>/dev/null'
 Icon=kiwix
 Terminal=false
 Categories=Education;
@@ -237,15 +174,14 @@ StartupNotify=true
   }
 
   /**
-   * Create library.xml file that tells Kiwix where ZIM files are
-   * @param {string} usbPath - USB drive path
+   * Create a Kiwix portable library.xml in the reader's data folder.
+   * @param {string} portableDataDir - Kiwix portable data directory
+   * @param {string} libraryPath - USB Library folder path
    */
-  async createLibraryXML(usbPath) {
-    const libraryPath = path.join(usbPath, 'Library');
-    const xmlPath = path.join(usbPath, '.data', 'library.xml');
+  async createLibraryXML(portableDataDir, libraryPath) {
+    const xmlPath = path.join(portableDataDir, 'library.xml');
 
-    // Ensure .data directory exists
-    await fs.ensureDir(path.join(usbPath, '.data'));
+    await fs.ensureDir(portableDataDir);
 
     try {
       // Find all .zim files in Library folder
@@ -265,14 +201,14 @@ StartupNotify=true
         const stats = await fs.stat(zimPath);
 
         // Extract basic info from filename (e.g., wikipedia_en_all_maxi_2025-11.zim)
-        const parts = zimFile.replace('.zim', '').split('_');
         const title = zimFile.replace('.zim', '').replace(/_/g, ' ');
         const id = zimFile.replace('.zim', '');
+        const normalizedZimPath = zimPath.split(path.sep).join('/');
 
-        xmlContent += `  <book id="${id}"\n`;
-        xmlContent += `        path="${zimPath}"\n`;
-        xmlContent += `        url="${zimFile}"\n`;
-        xmlContent += `        title="${title}"\n`;
+        xmlContent += `  <book id="${this.escapeXml(id)}"\n`;
+        xmlContent += `        path="${this.escapeXml(normalizedZimPath)}"\n`;
+        xmlContent += `        url="${this.escapeXml(zimFile)}"\n`;
+        xmlContent += `        title="${this.escapeXml(title)}"\n`;
         xmlContent += `        size="${stats.size}"/>\n`;
       }
 
