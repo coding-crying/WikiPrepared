@@ -5,6 +5,7 @@ const AdmZip = require('adm-zip');
 const { app } = require('electron');
 const { KIWIX_PLATFORMS, URLS } = require('../../shared/constants');
 const PlatformLauncherService = require('../services/PlatformLauncherService');
+const USB_LIBRARY_DIRNAME = 'Library (.zim files)';
 
 /**
  * KiwixManager - Handles Kiwix reader downloads and installation with caching
@@ -276,7 +277,7 @@ class KiwixManager {
   }
 
   async configurePortableLibrary(platform, usbPath, installPath) {
-    const libraryPath = path.join(usbPath, 'Library');
+    const libraryPath = path.join(usbPath, USB_LIBRARY_DIRNAME);
 
     if (!(await fs.pathExists(libraryPath))) {
       return;
@@ -284,7 +285,6 @@ class KiwixManager {
 
     let portableMarkerPath = null;
     let portableDataDir = null;
-
     if (platform === KIWIX_PLATFORMS.WINDOWS) {
       const executableDir = await this.findWindowsExecutableDir(installPath);
       if (!executableDir) {
@@ -292,10 +292,6 @@ class KiwixManager {
         return;
       }
 
-      portableMarkerPath = path.join(executableDir, '.portable');
-      portableDataDir = path.join(executableDir, 'data');
-    } else if (platform === KIWIX_PLATFORMS.LINUX) {
-      const executableDir = path.dirname(installPath);
       portableMarkerPath = path.join(executableDir, '.portable');
       portableDataDir = path.join(executableDir, 'data');
     } else {
@@ -316,10 +312,6 @@ class KiwixManager {
       await this.configurePortableLibrary(KIWIX_PLATFORMS.WINDOWS, usbPath, windowsInstallDir);
     }
 
-    const linuxInstallPath = path.join(usbPath, 'START - Linux.AppImage');
-    if (await fs.pathExists(linuxInstallPath)) {
-      await this.configurePortableLibrary(KIWIX_PLATFORMS.LINUX, usbPath, linuxInstallPath);
-    }
   }
 
   /**

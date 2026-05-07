@@ -1,6 +1,7 @@
 const fs = require('fs-extra');
 const crypto = require('crypto');
 const path = require('path');
+const USB_LIBRARY_DIRNAME = 'Library (.zim files)';
 
 /**
  * FileService - Handles file operations
@@ -161,8 +162,8 @@ class FileService {
     // Create hidden .data folder for readers
     await fs.ensureDir(path.join(usbPath, '.data'));
 
-    // Create Library folder for ZIM files
-    await fs.ensureDir(path.join(usbPath, 'Library'));
+    // Create the visible folder that holds ZIM content
+    await fs.ensureDir(path.join(usbPath, USB_LIBRARY_DIRNAME));
 
     // Copy Windows launcher
     const batSource = this.getAssetPath('START - Windows.bat');
@@ -236,7 +237,7 @@ class FileService {
   }
 
   /**
-   * Copy ZIM file to USB drive Library folder
+   * Copy a ZIM file to the visible USB library folder
    * @param {string} usbPath - USB drive path
    * @param {string} zimSource - Source ZIM file path
    * @param {Function} progressCallback - Progress callback
@@ -245,9 +246,9 @@ class FileService {
    */
   async copyZimToUSB(usbPath, zimSource, progressCallback = null, friendlyName = null) {
     const zimFilename = friendlyName || path.basename(zimSource);
-    const destPath = path.join(usbPath, 'Library', zimFilename);
+    const destPath = path.join(usbPath, USB_LIBRARY_DIRNAME, zimFilename);
 
-    console.log(`Copying ${zimFilename} to USB Library...`);
+    console.log(`Copying ${zimFilename} to USB ${USB_LIBRARY_DIRNAME}...`);
 
     await this.copyFile(zimSource, destPath, progressCallback);
 
@@ -357,8 +358,8 @@ class FileService {
       summary.totalSize += stats.size;
     }
 
-    // Check ZIM files in Library/
-    const libraryFolder = path.join(usbPath, 'Library');
+    // Check ZIM files in the visible USB library folder
+    const libraryFolder = path.join(usbPath, USB_LIBRARY_DIRNAME);
     if (await fs.pathExists(libraryFolder)) {
       const files = await fs.readdir(libraryFolder);
       for (const file of files) {

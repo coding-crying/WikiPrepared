@@ -12,6 +12,7 @@ import {
 } from '@mui/material';
 import { Warning as WarningIcon, CheckCircle as CheckIcon } from '@mui/icons-material';
 import { useAppFlowStore } from '../stores/appFlowStore';
+import { useDrivesStore } from '../stores/drivesStore';
 import { useToastStore } from '../stores/toastStore';
 import AppLayout from '../components/layout/AppLayout';
 import NavigationButtons from '../components/layout/NavigationButtons';
@@ -25,7 +26,10 @@ import { formatGB } from '../utils/formatters';
 export default function FilesystemWarningScreen() {
   const navigate = useNavigate();
   const selectedDrive = useAppFlowStore(state => state.selectedDrive);
+  const selectDrive = useAppFlowStore(state => state.selectDrive);
   const { showToast } = useToastStore();
+  const scanDrives = useDrivesStore(state => state.scanDrives);
+  const getDrive = useDrivesStore(state => state.getDrive);
   const [confirmText, setConfirmText] = useState('');
   const [isFormatting, setIsFormatting] = useState(false);
 
@@ -36,14 +40,19 @@ export default function FilesystemWarningScreen() {
 
     setIsFormatting(true);
     try {
-      // TODO: Call IPC to format drive
-      await window.electronAPI.invoke('drives:format', {
+      const result = await window.electronAPI.invoke('drives:format', {
         device: selectedDrive.device,
         filesystem: FILESYSTEMS.EXFAT
       });
 
+      await scanDrives();
+
+      const refreshedDrive = getDrive(selectedDrive.device) || result?.drive || null;
+      if (refreshedDrive) {
+        selectDrive(refreshedDrive);
+      }
+
       showToast('Drive formatted successfully to exFAT', 'success');
-      // After successful format, proceed
       navigate(ROUTES.CONFIGURE);
     } catch (error) {
       console.error('Format failed:', error);

@@ -24,6 +24,7 @@ import { useToastStore } from '../stores/toastStore';
 import AppLayout from '../components/layout/AppLayout';
 import { ROUTES, DOWNLOAD_STRATEGIES } from '../utils/constants';
 import { formatBytes, formatSpeed, formatDuration } from '../utils/formatters';
+const USB_LIBRARY_DIRNAME = 'Library (.zim files)';
 
 /**
  * Individual download item component
@@ -368,12 +369,12 @@ export default function DownloadProgressScreen() {
         return `${normalized}${sep}${child}`;
       };
 
-      // Determine destination - USB root for readers, Library subfolder for ZIMs
+      // Determine destination - USB root for readers, visible library folder for ZIMs
       const usbRoot = downloadStrategy === DOWNLOAD_STRATEGIES.DIRECT_TO_USB
         ? selectedDrive?.mountpoints?.[0]?.path
         : null;
       const destination = usbRoot; // For readers (handled by installToUSB -> .data/)
-      const zimDestination = joinPathForTarget(usbRoot, 'Library'); // For ZIMs
+      const zimDestination = joinPathForTarget(usbRoot, USB_LIBRARY_DIRNAME); // For ZIMs
 
       let instantCompleteCount = 0;
       const totalItems = selectedReaders.length + selectedZims.length;

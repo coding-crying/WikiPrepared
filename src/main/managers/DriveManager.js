@@ -14,6 +14,24 @@ class DriveManager {
     this._ejectPromises = new Map(); // blockDevice -> Promise
   }
 
+  async waitForDriveByDevice(devicePath, timeoutMs = 15000, intervalMs = 500) {
+    const deadline = Date.now() + timeoutMs;
+
+    while (Date.now() < deadline) {
+      const drives = await drivelist.list();
+      const drive = drives.find((d) => d.device === devicePath || d.devicePath === devicePath);
+      const mountpoint = drive?.mountpoints?.find((mp) => mp?.path)?.path || null;
+
+      if (drive && mountpoint) {
+        return this.formatDriveInfo(drive);
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    }
+
+    return null;
+  }
+
   normalizeFilesystem(filesystem) {
     const fs = (filesystem || 'exfat').toString().trim().toLowerCase();
     if (fs === 'exfat' || fs === 'ex-fat') return 'exfat';
@@ -773,11 +791,27 @@ class DriveManager {
           throw new Error(`Failed to format new partition: ${err.message}`);
         }
         
-        // 7. Wait for auto-mount
-        console.log('Format complete, waiting for system refresh...');
-        await new Promise(resolve => setTimeout(resolve, 3000));
-        
-        return { success: true, message: `Drive repartitioned and formatted to ${filesystem} successfully.` };
+        // 7. Mount the new partition explicitly so the app gets a real writable mountpoint.
+        console.log(`Mounting ${targetPartition}...`);
+        try {
+          await execAsync(`udisksctl mount -b ${targetPartition}`);
+        } catch (mountError) {
+          console.warn(`Explicit mount failed for ${targetPartition}:`, mountError.message);
+        }
+
+        console.log('Format complete, waiting for mounted drive to become available...');
+        const mountedDrive = await this.waitForDriveByDevice(diskDevice, 15000, 500);
+
+        if (!mountedDrive?.mountpoint) {
+          throw new Error('Drive formatted but no writable mountpoint was detected afterwards. Please unplug and reinsert the drive.');
+        }
+
+        return {
+          success: true,
+          message: `Drive repartitioned and formatted to ${filesystem} successfully.`,
+          drive: mountedDrive,
+          mountpoint: mountedDrive.mountpoint,
+        };
 
       } else if (platform === 'darwin') {
         // macOS: prefer diskutil with a best-effort resolution from mount path -> device node -> whole disk.
@@ -806,7 +840,14 @@ class DriveManager {
 
         console.log('Executing:', cmd);
         await execAsync(cmd);
-        return { success: true, message: `Drive formatted to ${fsNorm} successfully.` };
+        const mountedDrive = await this.waitForDriveByDevice(validation.drive.device, 10000, 500);
+
+        return {
+          success: true,
+          message: `Drive formatted to ${fsNorm} successfully.`,
+          drive: mountedDrive || validation.drive,
+          mountpoint: mountedDrive?.mountpoint || validation.drive.mountpoint,
+        };
 
       } else if (platform === 'win32') {
         const driveLetter = await this.resolveWindowsDriveLetter(drivePath);
@@ -827,7 +868,14 @@ class DriveManager {
           throw new Error(`Windows formatting requires Administrator privileges. ${e.message}`);
         }
 
-        return { success: true, message: `Drive ${driveLetter} formatted to ${fsType} successfully.` };
+        const mountedDrive = await this.waitForDriveByDevice(validation.drive.device, 10000, 500);
+
+        return {
+          success: true,
+          message: `Drive ${driveLetter} formatted to ${fsType} successfully.`,
+          drive: mountedDrive || validation.drive,
+          mountpoint: mountedDrive?.mountpoint || validation.drive.mountpoint,
+        };
         
       } else {
         throw new Error(`Unsupported platform: ${platform}`);

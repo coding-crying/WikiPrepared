@@ -17,6 +17,7 @@ const kiwixManager = new KiwixManager();
 const updateService = new UpdateService();
 const fileService = new FileService();
 const usbAuditService = new USBAuditService();
+const USB_LIBRARY_DIRNAME = 'Library (.zim files)';
 
 function getUsbRootFromDownloadDestination(destination) {
   if (!destination) {
@@ -24,8 +25,13 @@ function getUsbRootFromDownloadDestination(destination) {
   }
 
   const normalized = path.normalize(destination);
-  const librarySegment = `${path.sep}Library${path.sep}`;
-  const libraryIndex = normalized.indexOf(librarySegment);
+  const candidates = [
+    `${path.sep}${USB_LIBRARY_DIRNAME}${path.sep}`,
+    `${path.sep}Library${path.sep}`,
+  ];
+
+  const librarySegment = candidates.find((segment) => normalized.includes(segment));
+  const libraryIndex = librarySegment ? normalized.indexOf(librarySegment) : -1;
 
   if (libraryIndex === -1) {
     return null;
@@ -390,8 +396,8 @@ function setupIpcHandlers() {
       let totalSize = 0;
       const fileInfos = [];
 
-      // Ensure Library folder exists
-      const libraryDir = path.join(destination, 'Library');
+      // Ensure the visible ZIM library folder exists
+      const libraryDir = path.join(destination, USB_LIBRARY_DIRNAME);
       await fs.ensureDir(libraryDir);
 
       for (const file of zimFiles) {

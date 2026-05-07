@@ -2,7 +2,9 @@ const path = require('path');
 const fs = require('fs-extra');
 const { exec } = require('child_process');
 const util = require('util');
+const { pathToFileURL } = require('url');
 const execPromise = util.promisify(exec);
+const USB_LIBRARY_DIRNAME = 'Library (.zim files)';
 
 /**
  * PlatformLauncherService - Creates platform-specific launchers
@@ -61,6 +63,7 @@ setlocal enabledelayedexpansion
 :: Find kiwix-desktop.exe in .data\\kiwix-windows
 set "KIWIX_DIR=%~dp0.data\\kiwix-windows"
 set "KIWIX_EXE="
+set "KIWIX_HOME="
 
 :: Look for kiwix-desktop.exe in subdirectories
 for /d %%D in ("%KIWIX_DIR%\\*") do (
@@ -82,7 +85,8 @@ exit /b 1
 
 :found
 :: Launch portable Kiwix. The prebuilt library.xml handles the ZIM catalog.
-start "" "%KIWIX_EXE%"
+for %%I in ("%KIWIX_EXE%") do set "KIWIX_HOME=%%~dpI"
+start "" /D "%KIWIX_HOME%" "%KIWIX_EXE%"
 exit /b 0
 `;
 
@@ -113,7 +117,7 @@ MAC
 ---
 1. Double-click "Install Kiwix for Mac.dmg"
 2. Drag Kiwix to Applications
-3. Open Kiwix and drag files from the "Library" folder into it
+3. Open Kiwix and drag files from the "${USB_LIBRARY_DIRNAME}" folder into it
 
 
 LINUX
@@ -122,23 +126,22 @@ LINUX
 2. Check "Allow executing file as program"
 3. Double-click to run, or run from terminal:
    ./"START - Linux.AppImage"
-4. Your offline library should appear automatically
+4. In Kiwix, open files from the "${USB_LIBRARY_DIRNAME}" folder
 
 
 ANDROID
 -------
 1. Copy "Install on Android.apk" to your phone
 2. Open the APK to install Kiwix
-3. Copy files from the "Library" folder to your phone
+3. Copy files from the "${USB_LIBRARY_DIRNAME}" folder to your phone
 4. Open Kiwix and browse to the files
 
 
 ADDING CONTENT TO KIWIX
 -----------------------
-On Windows and Linux, WikiPrepared prebuilds the Kiwix library
-so your content should appear automatically on first launch.
-If you add or remove .zim files manually later, run WikiPrepared
-again to refresh the portable library.
+On Windows, WikiPrepared tries to prebuild the Kiwix portable library.
+If the content does not appear automatically, open files manually from
+the "${USB_LIBRARY_DIRNAME}" folder.
 
 
 Created with WikiPrepared - wikiprepared.com
@@ -175,16 +178,15 @@ StartupNotify=true
 
   /**
    * Create a Kiwix portable library.xml in the reader's data folder.
+   * This is only intended for the Windows portable Kiwix layout.
    * @param {string} portableDataDir - Kiwix portable data directory
-   * @param {string} libraryPath - USB Library folder path
+   * @param {string} libraryPath - USB library folder path
    */
   async createLibraryXML(portableDataDir, libraryPath) {
-    const xmlPath = path.join(portableDataDir, 'library.xml');
-
     await fs.ensureDir(portableDataDir);
 
     try {
-      // Find all .zim files in Library folder
+      // Find all .zim files in the visible USB library folder.
       const files = await fs.readdir(libraryPath);
       const zimFiles = files.filter(f => f.endsWith('.zim'));
 
@@ -200,21 +202,22 @@ StartupNotify=true
         const zimPath = path.join(libraryPath, zimFile);
         const stats = await fs.stat(zimPath);
 
-        // Extract basic info from filename (e.g., wikipedia_en_all_maxi_2025-11.zim)
         const title = zimFile.replace('.zim', '').replace(/_/g, ' ');
         const id = zimFile.replace('.zim', '');
         const normalizedZimPath = zimPath.split(path.sep).join('/');
+        const fileUrl = pathToFileURL(zimPath).href;
 
         xmlContent += `  <book id="${this.escapeXml(id)}"\n`;
         xmlContent += `        path="${this.escapeXml(normalizedZimPath)}"\n`;
-        xmlContent += `        url="${this.escapeXml(zimFile)}"\n`;
+        xmlContent += `        url="${this.escapeXml(fileUrl)}"\n`;
         xmlContent += `        title="${this.escapeXml(title)}"\n`;
         xmlContent += `        size="${stats.size}"/>\n`;
       }
 
       xmlContent += '</library>\n';
 
-      await fs.writeFile(xmlPath, xmlContent, 'utf-8');
+      await fs.writeFile(path.join(portableDataDir, 'library.xml'), xmlContent, 'utf-8');
+
       console.log(`✓ Created library.xml with ${zimFiles.length} ZIM file(s)`);
     } catch (error) {
       console.log('Warning: Could not create library.xml:', error.message);

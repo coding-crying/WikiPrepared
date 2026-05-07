@@ -41,6 +41,11 @@ export default function TransferProgressScreen() {
   const [waitingForConfirmation, setWaitingForConfirmation] = useState(false);
   const [isTransferring, setIsTransferring] = useState(false);
 
+  const getCurrentDriveMountpoint = () => {
+    const currentDrive = selectedDrive ? getDrive(selectedDrive.device) : null;
+    return currentDrive?.mountpoints?.[0]?.path || currentDrive?.mountpoint || null;
+  };
+
   useEffect(() => {
     checkForOldVersions();
   }, []);
@@ -57,7 +62,7 @@ export default function TransferProgressScreen() {
     }
 
     try {
-      const mountpoint = currentDrive.mountpoints?.[0]?.path;
+      const mountpoint = currentDrive.mountpoints?.[0]?.path || currentDrive.mountpoint;
       if (!mountpoint) {
         console.error('No mountpoint found for drive');
         alert('Error: Drive has no mount point. Try unplugging and replugging it.');
@@ -86,7 +91,7 @@ export default function TransferProgressScreen() {
     } catch (error) {
       console.error('Failed to check old versions:', error);
       // Attempt transfer anyway if possible
-      const mp = currentDrive.mountpoints?.[0]?.path;
+      const mp = currentDrive.mountpoints?.[0]?.path || currentDrive.mountpoint;
       if (mp) await startTransfer(mp);
     }
   };
@@ -95,7 +100,7 @@ export default function TransferProgressScreen() {
     setWaitingForConfirmation(false);
     setIsTransferring(true);
     
-    const mountpoint = selectedDrive?.mountpoints?.[0]?.path;
+    const mountpoint = getCurrentDriveMountpoint();
     if (!mountpoint) return;
 
     if (oldVersionsToDelete.length > 0 && deleteOldVersions) {
