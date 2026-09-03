@@ -139,6 +139,25 @@ Contributions are welcome.
 2. Keep changes scoped and test the affected flow.
 3. Update docs when behavior changes.
 
+## Code signing policy
+
+Windows builds are unsigned at this time. If you see a SmartScreen warning,
+choose "More info" → "Run anyway" — or verify the download against the SHA-256
+checksum published with each release.
+
+We are evaluating free code signing through [SignPath.io](https://signpath.io)
+(certificate by SignPath Foundation) for future Windows releases. If adopted,
+this section will carry the statement:
+*"Free code signing provided by SignPath.io, certificate by SignPath Foundation."*
+
+**Team roles** (single-maintainer project): committers, reviewers, and release
+approvers are the repository [Owners](https://github.com/orgs/coding-crying/people).
+
+**Privacy policy:** This program will not transfer any information to other
+networked systems unless specifically requested by the user or the person
+installing or operating it. All network activity (ZIM catalog fetches and
+downloads from Wikimedia/Kiwix servers) is user-initiated and visible in the UI.
+
 ## License
 
 GPL-3.0. See `LICENSE`.
