@@ -33,16 +33,20 @@ const env = {
 delete env.npm_config_python;
 delete env.NPM_CONFIG_PYTHON;
 
+// Spawn electron-builder's JS entry directly with the current Node binary.
+// Do NOT spawn the .cmd shim on Windows: since Node 20.12 (CVE-2024-27980),
+// spawnSync on a .cmd/.bat without shell:true throws EINVAL. Going through
+// cli.js avoids that policy entirely and works identically on all platforms.
 const bin = path.join(
   __dirname,
   '..',
   'node_modules',
-  '.bin',
-  process.platform === 'win32' ? 'electron-builder.cmd' : 'electron-builder'
+  'electron-builder',
+  'cli.js'
 );
 
 const args = process.argv.slice(2);
-const res = spawnSync(bin, args, { stdio: 'inherit', env });
+const res = spawnSync(process.execPath, [bin, ...args], { stdio: 'inherit', env });
 
 if (res.error) {
   console.error(res.error);
