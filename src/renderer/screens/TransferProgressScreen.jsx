@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Box,
@@ -11,12 +11,18 @@ import {
   ListItem,
   ListItemText,
   Divider,
-  Button
+  Button,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogContentText,
+  DialogActions
 } from '@mui/material';
 import { Check as CheckIcon } from '@mui/icons-material';
 import { useAppFlowStore } from '../stores/appFlowStore';
 import { useZimsStore } from '../stores/zimsStore';
 import { useDrivesStore } from '../stores/drivesStore';
+import { useToastStore } from '../stores/toastStore';
 import ProgressBar from '../components/common/ProgressBar';
 import AppLayout from '../components/layout/AppLayout';
 import { ROUTES } from '../utils/constants';
@@ -31,6 +37,7 @@ export default function TransferProgressScreen() {
   const { selectedDrive, selectedZims, selectedReaders, transferProgress, setTransferProgress } = useAppFlowStore();
   const { installedZims } = useZimsStore();
   const getDrive = useDrivesStore(state => state.getDrive);
+  const { showToast } = useToastStore();
 
   const [oldVersionsToDelete, setOldVersionsToDelete] = useState([]);
   const [deleteOldVersions, setDeleteOldVersions] = useState(true);
@@ -40,6 +47,12 @@ export default function TransferProgressScreen() {
   const [totalTransferSize, setTotalTransferSize] = useState(0);
   const [waitingForConfirmation, setWaitingForConfirmation] = useState(false);
   const [isTransferring, setIsTransferring] = useState(false);
+  // Cancel confirmation dialog (in-app, themed)
+  const [showCancelDialog, setShowCancelDialog] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
+
+  // Guards against StrictMode double-mount auto-starting the transfer twice
+  const transferInitiatedRef = useRef(false);
 
   const getCurrentDriveMountpoint = () => {
     const currentDrive = selectedDrive ? getDrive(selectedDrive.device) : null;
@@ -47,6 +60,8 @@ export default function TransferProgressScreen() {
   };
 
   useEffect(() => {
+    if (transferInitiatedRef.current) return;
+    transferInitiatedRef.current = true;
     checkForOldVersions();
   }, []);
 
@@ -56,7 +71,7 @@ export default function TransferProgressScreen() {
     
     if (!currentDrive) {
       console.error('Selected drive not found in current drive list');
-      alert('Error: Drive not found. Please reconnect the drive.');
+      showToast('Error: Drive not found. Please reconnect the drive.', 'error');
       navigate(ROUTES.DRIVE_SELECTION);
       return;
     }
@@ -65,7 +80,7 @@ export default function TransferProgressScreen() {
       const mountpoint = currentDrive.mountpoints?.[0]?.path || currentDrive.mountpoint;
       if (!mountpoint) {
         console.error('No mountpoint found for drive');
-        alert('Error: Drive has no mount point. Try unplugging and replugging it.');
+        showToast('Error: Drive has no mount point. Try unplugging and replugging it.', 'error');
         return;
       }
 
@@ -101,7 +116,10 @@ export default function TransferProgressScreen() {
     setIsTransferring(true);
     
     const mountpoint = getCurrentDriveMountpoint();
-    if (!mountpoint) return;
+    if (!mountpoint) {
+      showToast('Error: Drive has no mount point. Try unplugging and replugging it.', 'error');
+      return;
+    }
 
     if (oldVersionsToDelete.length > 0 && deleteOldVersions) {
       await deleteOldFiles(oldVersionsToDelete);
@@ -130,11 +148,6 @@ export default function TransferProgressScreen() {
 
       console.log('Starting transfer to:', mountpoint);
 
-      // Listen for transfer progress
-      window.electronAPI.on('transfer:progress', handleTransferProgress);
-      window.electronAPI.on('transfer:completed', handleTransferCompleted);
-      window.electronAPI.on('transfer:error', handleTransferError);
-
       // Start transfer
       await window.electronAPI.invoke('transfer:start', {
         destination: mountpoint,
@@ -143,7 +156,7 @@ export default function TransferProgressScreen() {
       });
     } catch (error) {
       console.error('Failed to start transfer:', error);
-      alert(`Failed to start transfer: ${error.message}`);
+      showToast(`Failed to start transfer: ${error.message}`, 'error');
     }
   };
 
@@ -161,16 +174,35 @@ export default function TransferProgressScreen() {
 
   const handleTransferError = (error) => {
     console.error('Transfer error:', error);
-    alert(`Transfer error: ${error.message}`);
+    showToast(`Transfer error: ${error.message}`, 'error', 8000);
   };
 
+  // Register IPC listeners once on mount (StrictMode-safe), unsubscribe on unmount.
+  // Using the unsubscribe functions returned by .on() instead of .off(), which
+  // nukes ALL listeners on the channel.
   useEffect(() => {
-    return () => {
-      window.electronAPI.off('transfer:progress');
-      window.electronAPI.off('transfer:completed');
-      window.electronAPI.off('transfer:error');
-    };
+    const unsubscribers = [
+      window.electronAPI.on('transfer:progress', handleTransferProgress),
+      window.electronAPI.on('transfer:completed', handleTransferCompleted),
+      window.electronAPI.on('transfer:error', handleTransferError),
+    ];
+    return () => unsubscribers.forEach((unsub) => unsub && unsub());
   }, []);
+
+  const handleCancelTransfer = async () => {
+    setIsCancelling(true);
+    try {
+      await window.electronAPI.invoke('transfer:cancel');
+      showToast('Cancelling transfer…', 'info');
+    } catch (error) {
+      console.error('Failed to request transfer cancel:', error);
+      showToast(`Failed to cancel transfer: ${error.message}`, 'error');
+    } finally {
+      // The transfer:error handler will fire when main acknowledges the cancel;
+      // re-enable the button in case the transfer finished in between.
+      setTimeout(() => setIsCancelling(false), 2000);
+    }
+  };
 
   return (
     <AppLayout
@@ -270,9 +302,43 @@ export default function TransferProgressScreen() {
               <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
                 {transferProgress.toFixed(1)}% complete
               </Typography>
+              <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2 }}>
+                <Button
+                  variant="outlined"
+                  color="error"
+                  disabled={isCancelling}
+                  onClick={() => setShowCancelDialog(true)}
+                >
+                  {isCancelling ? 'Cancelling…' : 'Cancel Transfer'}
+                </Button>
+              </Box>
             </Paper>
           </>
         )}
+
+        {/* Cancel confirmation dialog */}
+        <Dialog open={showCancelDialog} onClose={() => setShowCancelDialog(false)}>
+          <DialogTitle>Cancel this transfer?</DialogTitle>
+          <DialogContent>
+            <DialogContentText>
+              Copying will stop now. Incomplete files are removed from the USB
+              drive; files that finished copying are kept.
+            </DialogContentText>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setShowCancelDialog(false)}>Keep Transferring</Button>
+            <Button
+              color="error"
+              variant="contained"
+              onClick={() => {
+                setShowCancelDialog(false);
+                handleCancelTransfer();
+              }}
+            >
+              Cancel Transfer
+            </Button>
+          </DialogActions>
+        </Dialog>
       </Box>
     </AppLayout>
   );

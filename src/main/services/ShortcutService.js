@@ -26,26 +26,34 @@ class ShortcutService {
       return;
     }
 
-    // Use PowerShell to create shortcut
-    const { exec } = require('child_process');
-    const util = require('util');
-    const execPromise = util.promisify(exec);
-
-    const iconPathEscaped = iconPath.replace(/\\/g, '\\\\');
-    const targetPathEscaped = targetPath.replace(/\\/g, '\\\\');
-    const shortcutPathEscaped = shortcutPath.replace(/\\/g, '\\\\');
+    // Pass the script via stdin using -Command - (no shell string context, so
+    // quotes/backticks/$() in paths or descriptions cannot break out and
+    // execute arbitrary PowerShell).
+    const { spawn } = require('child_process');
 
     const psScript = `
 $WScriptShell = New-Object -ComObject WScript.Shell
-$Shortcut = $WScriptShell.CreateShortcut("${shortcutPathEscaped}")
-$Shortcut.TargetPath = "${targetPathEscaped}"
-$Shortcut.IconLocation = "${iconPathEscaped}"
-$Shortcut.Description = "${description}"
+$Shortcut = $WScriptShell.CreateShortcut('${shortcutPath.replace(/'/g, "''")}')
+$Shortcut.TargetPath = '${targetPath.replace(/'/g, "''")}'
+$Shortcut.IconLocation = '${(iconPath || '').replace(/'/g, "''")}'
+$Shortcut.Description = '${String(description).replace(/'/g, "''")}'
 $Shortcut.Save()
     `.trim();
 
     try {
-      await execPromise(`powershell -Command "${psScript}"`);
+      await new Promise((resolve, reject) => {
+        const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', '-'], {
+          stdio: ['pipe', 'pipe', 'pipe'],
+        });
+        let stderr = '';
+        child.stderr.on('data', (d) => { stderr += d.toString(); });
+        child.on('error', reject);
+        child.on('close', (code) => {
+          if (code === 0) return resolve();
+          reject(new Error(`PowerShell exited with code ${code}: ${stderr.trim()}`));
+        });
+        child.stdin.end(psScript);
+      });
       console.log(`Created Windows shortcut: ${shortcutPath}`);
     } catch (error) {
       console.error('Failed to create Windows shortcut:', error);

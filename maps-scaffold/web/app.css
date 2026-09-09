@@ -1,0 +1,431 @@
+/* WikiPrepared Maps — Dark Industrial Glass Theme */
+
+/* Reset & Base */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  --bg-primary: #0a0a0a;
+  --bg-glass: rgba(15, 15, 15, 0.75);
+  --bg-glass-hover: rgba(20, 20, 20, 0.85);
+  --accent: #10b981;
+  --accent-dim: rgba(16, 185, 129, 0.3);
+  --text-primary: #ffffff;
+  --text-secondary: #a0a0a0;
+  --text-muted: #666666;
+  --border-glass: rgba(255, 255, 255, 0.08);
+  --shadow-glass: 0 4px 24px rgba(0, 0, 0, 0.5), 0 1px 4px rgba(0, 0, 0, 0.3);
+  --radius: 12px;
+  --transition: 0.25s ease;
+}
+
+html, body {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  font-family: 'Inter', 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+/* Full-Screen Map */
+#map {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+}
+
+/* Glassmorphism Base */
+.glass-panel {
+  background: var(--bg-glass);
+  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-glass);
+  transition: all var(--transition);
+}
+
+.glass-btn {
+  background: var(--bg-glass);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 0.9rem;
+  padding: 8px 12px;
+  transition: all var(--transition);
+  box-shadow: var(--shadow-glass);
+}
+
+.glass-btn:hover {
+  background: var(--bg-glass-hover);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.accent-btn {
+  background: var(--accent);
+  color: var(--bg-primary);
+  border: none;
+  border-radius: var(--radius);
+  padding: 8px 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.accent-btn:hover {
+  background: #0ea572;
+  box-shadow: 0 0 16px var(--accent-dim);
+}
+
+/* Search Bar */
+#search-container {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 480px;
+  width: calc(100% - 32px);
+}
+
+#search-toggle {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  display: none;
+  justify-content: center;
+  align-items: center;
+  font-size: 1.1rem;
+  border-radius: var(--radius);
+}
+
+#search-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  width: 100%;
+  position: relative;
+}
+
+#search-input {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-glass);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-size: 0.95rem;
+  padding: 10px 14px;
+  outline: none;
+  transition: border-color var(--transition);
+}
+
+#search-input::placeholder {
+  color: var(--text-muted);
+}
+
+#search-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-dim);
+}
+
+#search-results {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  max-height: 300px;
+  overflow-y: auto;
+  padding: 8px;
+}
+
+#search-results.hidden {
+  display: none;
+}
+
+.search-result-item {
+  padding: 8px 12px;
+  cursor: pointer;
+  border-radius: 8px;
+  transition: background var(--transition);
+}
+
+.search-result-item:hover {
+  background: rgba(16, 185, 129, 0.1);
+}
+
+/* POI Category Panel */
+#poi-panel {
+  position: absolute;
+  top: 80px;
+  left: 16px;
+  z-index: 10;
+  padding: 16px;
+  min-width: 200px;
+}
+
+.panel-title {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--accent);
+  margin-bottom: 12px;
+  font-weight: 600;
+}
+
+#poi-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.poi-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-glass);
+  border-radius: 8px;
+  color: var(--text-secondary);
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: all var(--transition);
+  width: 100%;
+  text-align: left;
+}
+
+.poi-btn:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
+.poi-btn.active {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
+.poi-btn .poi-icon {
+  font-size: 1.1rem;
+  width: 22px;
+  text-align: center;
+}
+
+.poi-btn.inactive {
+  opacity: 0.4;
+}
+
+.poi-btn.inactive .poi-icon {
+  filter: grayscale(1);
+}
+
+/* Legend Panel */
+#legend-panel {
+  position: absolute;
+  bottom: 32px;
+  right: 16px;
+  z-index: 10;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+#legend-toggle {
+  align-self: flex-end;
+  margin: 8px 8px 4px 8px;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-size: 1.1rem;
+}
+
+#legend-content {
+  padding: 12px 16px 16px 16px;
+  min-width: 200px;
+}
+
+#legend-content.collapsed {
+  display: none;
+}
+
+.legend-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  padding: 3px 0;
+}
+
+.legend-swatch {
+  display: inline-block;
+  width: 20px;
+  height: 14px;
+  border-radius: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  flex-shrink: 0;
+}
+
+.legend-line {
+  display: inline-block;
+  width: 20px;
+  height: 3px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+/* Theme Toggle */
+#theme-toggle {
+  position: absolute;
+  bottom: 32px;
+  left: 16px;
+  z-index: 10;
+  padding: 4px;
+}
+
+#theme-btn {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-size: 1.2rem;
+}
+
+/* MapLibre Overrides */
+.maplibregl-ctrl-group {
+  background: var(--bg-glass) !important;
+  backdrop-filter: blur(16px) !important;
+  border: 1px solid var(--border-glass) !important;
+  border-radius: var(--radius) !important;
+  box-shadow: var(--shadow-glass) !important;
+}
+
+.maplibregl-ctrl-group button {
+  background: transparent !important;
+  border-color: var(--border-glass) !important;
+  color: var(--text-primary) !important;
+}
+
+.maplibregl-ctrl-group button:hover {
+  background: var(--bg-glass-hover) !important;
+}
+
+.maplibregl-ctrl-group button span {
+  filter: invert(1);
+}
+
+.maplibregl-ctrl-scale {
+  background: var(--bg-glass) !important;
+  backdrop-filter: blur(12px) !important;
+  border: 1px solid var(--border-glass) !important;
+  border-radius: 4px !important;
+  color: var(--text-secondary) !important;
+  font-size: 0.75rem !important;
+}
+
+.maplibregl-ctrl-attrib {
+  background: rgba(10, 10, 10, 0.6) !important;
+  color: var(--text-muted) !important;
+  font-size: 0.65rem !important;
+}
+
+.maplibregl-ctrl-attrib a {
+  color: var(--accent) !important;
+}
+
+/* Responsive — Mobile */
+@media (max-width: 768px) {
+  #search-container {
+    top: 12px;
+    max-width: calc(100% - 24px);
+  }
+
+  #search-toggle {
+    display: flex;
+  }
+
+  #search-bar {
+    display: none;
+  }
+
+  #search-container.expanded #search-bar {
+    display: flex;
+  }
+
+  #search-container.expanded #search-toggle {
+    display: none;
+  }
+
+  #poi-panel {
+    top: auto;
+    bottom: 80px;
+    left: 12px;
+    padding: 12px;
+    min-width: auto;
+  }
+
+  #poi-buttons {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  .poi-btn {
+    padding: 6px 8px;
+    font-size: 0.75rem;
+  }
+
+  .poi-btn .poi-label {
+    display: none;
+  }
+
+  .poi-btn .poi-icon {
+    font-size: 1rem;
+  }
+
+  #legend-panel {
+    bottom: 80px;
+    right: 12px;
+  }
+
+  #legend-content {
+    min-width: 160px;
+  }
+}
+
+@media (max-width: 480px) {
+  #poi-panel {
+    bottom: 72px;
+    left: 8px;
+    right: 8px;
+    padding: 10px;
+  }
+
+  #poi-buttons {
+    justify-content: center;
+  }
+
+  #legend-panel {
+    bottom: 72px;
+  }
+}

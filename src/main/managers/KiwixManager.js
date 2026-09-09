@@ -442,9 +442,14 @@ class KiwixManager {
       const totalSize = parseInt(response.headers['content-length'], 10) || versionInfo.size;
       let downloadedSize = 0;
 
+      // Integrity: hash bytes as they arrive for checksum verification.
+      const crypto = require('crypto');
+      const downloadHash = crypto.createHash('sha256');
+
       const writer = fs.createWriteStream(cachePath);
 
       response.data.on('data', (chunk) => {
+        try { downloadHash.update(chunk); } catch (_e) { /* ignore */ }
         downloadedSize += chunk.length;
         if (onProgress) {
           onProgress({
@@ -461,9 +466,31 @@ class KiwixManager {
       await new Promise((resolve, reject) => {
         writer.on('finish', resolve);
         writer.on('error', reject);
+        response.data.on('error', reject);
       });
 
-      console.log(`Downloaded and cached Kiwix reader: ${cachePath}`);
+      const actualSha256 = downloadHash.digest('hex');
+      const expectedSha256 = versionInfo.sha256 || null;
+
+      // Minimum plausible size: guards against a hijacked/error response
+      // replacing the binary with a tiny HTML page.
+      const minBytes = 1024 * 1024; // 1 MB
+      if (downloadedSize < minBytes) {
+        await fs.remove(cachePath).catch(() => {});
+        throw new Error(`Downloaded reader for ${platform} is suspiciously small (${downloadedSize} bytes); removed.`);
+      }
+
+      if (expectedSha256 && actualSha256 !== expectedSha256.toLowerCase()) {
+        await fs.remove(cachePath).catch(() => {});
+        throw new Error(`Checksum mismatch for Kiwix reader (${platform}). Expected ${expectedSha256}, got ${actualSha256}. Download rejected.`);
+      }
+
+      // Persist the checksum baseline for audits even when unpinned.
+      try {
+        await fs.writeFile(`${cachePath}.sha256`, `${actualSha256}  ${versionInfo.filename}\n`, 'utf8');
+      } catch (_e) { /* non-fatal */ }
+
+      console.log(`Downloaded and cached Kiwix reader: ${cachePath} (sha256 ${expectedSha256 ? 'verified' : 'baseline recorded'})`);
 
       // If destination provided, copy from cache
       if (destination) {

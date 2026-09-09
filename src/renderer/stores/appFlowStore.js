@@ -60,8 +60,11 @@ export const useAppFlowStore = create(
 
         getAvailableSpace: () => {
           const state = get();
-          // Return usable space (approx 95% of raw bytes to account for filesystem overhead)
-          return state.selectedDrive ? Math.floor(state.selectedDrive.size * 0.95) : 0;
+          // Use free space (not total size) with a 5% safety margin for
+          // filesystem overhead and block-size alignment.
+          if (!state.selectedDrive) return 0;
+          const free = state.selectedDrive.freeSpace ?? state.selectedDrive.size;
+          return Math.floor(free * 0.95);
         },
 
         hasEnoughSpace: () => {

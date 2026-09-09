@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Box,
@@ -17,7 +17,6 @@ import { useToastStore } from '../stores/toastStore';
 import AppLayout from '../components/layout/AppLayout';
 import NavigationButtons from '../components/layout/NavigationButtons';
 import { ROUTES, FILESYSTEMS } from '../utils/constants';
-import { formatGB } from '../utils/formatters';
 
 /**
  * Step 2.5: Filesystem warning and format option
@@ -34,6 +33,13 @@ export default function FilesystemWarningScreen() {
   const [isFormatting, setIsFormatting] = useState(false);
 
   const canFormat = confirmText === 'FORMAT';
+
+  // Guard: no drive selected → redirect (in an effect, not during render)
+  useEffect(() => {
+    if (!selectedDrive) {
+      navigate(ROUTES.DRIVE_SELECTION, { replace: true });
+    }
+  }, [selectedDrive, navigate]);
 
   const handleFormat = async () => {
     if (!canFormat || !selectedDrive) return;
@@ -71,7 +77,6 @@ export default function FilesystemWarningScreen() {
   };
 
   if (!selectedDrive) {
-    navigate(ROUTES.DRIVE_SELECTION);
     return null;
   }
 
@@ -82,20 +87,20 @@ export default function FilesystemWarningScreen() {
       <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
         <Box sx={{ flex: 1, overflow: 'auto', mb: 2 }}>
           <Alert severity="warning" sx={{ mb: 3 }}>
-          <Typography variant="body1" gutterBottom fontWeight={700}>
-            We need to prepare this USB stick for Wikipedia.
-          </Typography>
-          <Typography variant="body2">
-            The current format ({selectedDrive.filesystem}) cannot handle the large Wikipedia files.
-          </Typography>
-        </Alert>
+            <Typography variant="body1" gutterBottom fontWeight={700}>
+              We need to prepare this USB stick for Wikipedia.
+            </Typography>
+            <Typography variant="body2">
+              The current format ({selectedDrive.filesystem}) cannot handle the large Wikipedia files.
+            </Typography>
+          </Alert>
 
-        <Typography variant="h6" gutterBottom>
-          Recommended Action: Erase & Prepare
-        </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-          This ensures the stick works perfectly on Windows, Mac, and Linux.
-        </Typography>
+          <Typography variant="h6" gutterBottom>
+            Recommended Action: Erase &amp; Prepare
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+            This ensures the stick works perfectly on Windows, Mac, and Linux.
+          </Typography>
 
         {/* Format option */}
         <Paper

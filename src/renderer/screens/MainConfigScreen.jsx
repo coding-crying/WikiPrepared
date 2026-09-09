@@ -28,6 +28,7 @@ import {
 } from '@mui/icons-material';
 import { useAppFlowStore } from '../stores/appFlowStore';
 import { useZimsStore } from '../stores/zimsStore';
+import { useToastStore } from '../stores/toastStore';
 import { useStorageCalculation } from '../hooks/useStorageCalculation';
 import ZimListItem from '../components/common/ZimListItem';
 import ReaderSelector from '../components/common/ReaderSelector';
@@ -43,6 +44,7 @@ import { formatBytes, formatDate } from '../utils/formatters';
  */
 export default function MainConfigScreen() {
   const navigate = useNavigate();
+  const { showToast } = useToastStore();
   const [expandedAccordion, setExpandedAccordion] = useState('addNew'); // 'existing' or 'addNew'
   const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
   const [selectedScope, setSelectedScope] = useState('all'); // 'all', 'mini', 'nopic', 'maxi'
@@ -139,12 +141,12 @@ export default function MainConfigScreen() {
 
   const handleContinue = () => {
     if (selectedZims.length === 0) {
-      alert('Please select at least one Wikipedia dump');
+      showToast('Please select at least one Wikipedia dump', 'warning');
       return;
     }
 
     if (!hasSpace) {
-      alert('Selected content exceeds available space. Please reduce your selection.');
+      showToast('Selected content exceeds available space. Please reduce your selection.', 'error');
       return;
     }
 
@@ -152,11 +154,11 @@ export default function MainConfigScreen() {
     if (!selectedDrive) {
       if (localDiskInfo) {
         if (localDiskInfo.freeSpace < totalSize) {
-          alert(`Not enough space on local disk. Need ${formatBytes(totalSize)}, have ${formatBytes(localDiskInfo.freeSpace)}.`);
+          showToast(`Not enough space on local disk. Need ${formatBytes(totalSize)}, have ${formatBytes(localDiskInfo.freeSpace)}.`, 'error');
           return;
         }
         if (!localDiskInfo.supportsLargeFiles && largestFileSize > STORAGE.FAT32_MAX_FILE_SIZE) {
-          alert(`Your filesystem (${localDiskInfo.filesystem}) doesn't support files over 4GB.`);
+          showToast(`Your filesystem (${localDiskInfo.filesystem}) doesn't support files over 4GB.`, 'error');
           return;
         }
       }

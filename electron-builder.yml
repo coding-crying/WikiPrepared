@@ -1,6 +1,6 @@
 appId: com.wikiprepared.app
 productName: WikiPrepared
-copyright: Copyright 2024-2025
+copyright: Copyright 2024-2026
 
 # Override main entry for production build
 extraMetadata:

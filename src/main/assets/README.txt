@@ -19,8 +19,9 @@ LINUX
   bash "START - Linux.sh"
 
 ANDROID
-  Copy "Install on Android.apk" to your phone and install it.
-  Then open the Kiwix app and load files from the Library folder.
+  Install the free "Kiwix" app from the Google Play Store.
+  Then connect this USB drive (OTG adapter may be required), open
+  Kiwix, and load files from the Library folder.
 
 iOS (iPhone/iPad)
   Download "Kiwix" from the App Store.

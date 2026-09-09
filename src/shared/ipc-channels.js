@@ -70,6 +70,7 @@ const IPC_CHANNELS = {
   TRANSFER_PROGRESS: 'transfer:progress', // Event
   TRANSFER_COMPLETED: 'transfer:completed', // Event
   TRANSFER_ERROR: 'transfer:error', // Event
+  TRANSFER_CANCEL: 'transfer:cancel',
 
   // USB Audit / Integrity
   USB_AUDIT_SCAN: 'usb:audit:scan',

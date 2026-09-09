@@ -7,7 +7,12 @@ import {
   Button,
   Paper,
   LinearProgress,
-  Chip
+  Chip,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogContentText,
+  DialogActions
 } from '@mui/material';
 import {
   Pause,
@@ -167,6 +172,8 @@ export default function DownloadProgressScreen() {
   const [isPaused, setIsPaused] = useState(false);
   const [downloadLocation, setDownloadLocation] = useState(null);
   const [kiwixVersions, setKiwixVersions] = useState({});
+  // In-app confirmation dialog state ({ title, message, onConfirm } | null)
+  const [confirmDialog, setConfirmDialog] = useState(null);
   
   // Ref to prevent double-start in StrictMode
   const hasStartedRef = React.useRef(false);
@@ -284,6 +291,7 @@ export default function DownloadProgressScreen() {
     showToast(`Download failed: ${filename} - ${message}`, 'error', 8000);
   }, [showToast]);
 
+  // Start downloads once (guarded against StrictMode double-invoke)
   useEffect(() => {
     if (hasStartedRef.current) return;
     hasStartedRef.current = true;
@@ -313,8 +321,13 @@ export default function DownloadProgressScreen() {
         }
     };
     init();
+  }, []);
 
-    // Listen for download progress
+  // Register IPC listeners in their own unguarded effect: StrictMode
+  // double-mount runs mount → cleanup → mount, so listeners must be
+  // re-registered on the second mount (a start guard would leave zero
+  // listeners attached and the UI would go deaf to progress events).
+  useEffect(() => {
     const unsubProgress = window.electronAPI.on('download:progress', handleDownloadProgress);
     const unsubCompleted = window.electronAPI.on('download:completed', handleDownloadCompleted);
     const unsubError = window.electronAPI.on('download:error', handleDownloadError);
@@ -324,7 +337,7 @@ export default function DownloadProgressScreen() {
       if (unsubCompleted) unsubCompleted();
       if (unsubError) unsubError();
     };
-  }, []);
+  }, [handleDownloadProgress, handleDownloadCompleted, handleDownloadError]);
 
   // Poll for download status every 2 seconds (Fallback for missed IPC events)
   useEffect(() => {
@@ -498,7 +511,7 @@ export default function DownloadProgressScreen() {
 
     } catch (error) {
       console.error('Failed to start downloads:', error);
-      alert(`Failed to start downloads: ${error.message}`);
+      showToast(`Failed to start downloads: ${error.message}`, 'error');
     }
   };
 
@@ -516,26 +529,36 @@ export default function DownloadProgressScreen() {
   };
 
   const handleCancel = async () => {
-    if (!confirm('Are you sure you want to cancel all downloads?')) return;
-
-    try {
-      await window.electronAPI.invoke('download:cancel-all');
-      navigate(ROUTES.CONFIGURE);
-    } catch (error) {
-      console.error('Failed to cancel:', error);
-    }
+    setConfirmDialog({
+      title: 'Cancel all downloads?',
+      message: 'All in-progress downloads will be stopped and partial files removed.',
+      confirmLabel: 'Cancel Downloads',
+      onConfirm: async () => {
+        try {
+          await window.electronAPI.invoke('download:cancel-all');
+          navigate(ROUTES.CONFIGURE);
+        } catch (error) {
+          console.error('Failed to cancel:', error);
+        }
+      }
+    });
   };
 
   const handleBack = async () => {
-    if (!confirm('Going back will cancel all downloads. Continue?')) return;
-
-    try {
-      await window.electronAPI.invoke('download:cancel-all');
-      navigate(ROUTES.DOWNLOAD_STRATEGY);
-    } catch (error) {
-      console.error('Failed to cancel:', error);
-      navigate(ROUTES.DOWNLOAD_STRATEGY);
-    }
+    setConfirmDialog({
+      title: 'Go back and cancel downloads?',
+      message: 'Going back will cancel all downloads. Continue?',
+      confirmLabel: 'Go Back',
+      onConfirm: async () => {
+        try {
+          await window.electronAPI.invoke('download:cancel-all');
+        } catch (error) {
+          console.error('Failed to cancel:', error);
+        } finally {
+          navigate(ROUTES.DOWNLOAD_STRATEGY);
+        }
+      }
+    });
   };
 
   const handleOpenFolder = async () => {
@@ -543,7 +566,7 @@ export default function DownloadProgressScreen() {
       await window.electronAPI.invoke('download:open-folder');
     } catch (error) {
       console.error('Failed to open folder:', error);
-      alert('Failed to open folder');
+      showToast('Failed to open download folder', 'error');
     }
   };
 
@@ -692,6 +715,31 @@ export default function DownloadProgressScreen() {
           </Box>
         </Box>
       </Box>
+
+      {/* In-app confirmation dialog (replaces native confirm()) */}
+      <Dialog
+        open={confirmDialog !== null}
+        onClose={() => setConfirmDialog(null)}
+      >
+        <DialogTitle>{confirmDialog?.title}</DialogTitle>
+        <DialogContent>
+          <DialogContentText>{confirmDialog?.message}</DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirmDialog(null)}>Stay</Button>
+          <Button
+            color="error"
+            variant="contained"
+            onClick={() => {
+              const action = confirmDialog?.onConfirm;
+              setConfirmDialog(null);
+              if (action) action();
+            }}
+          >
+            {confirmDialog?.confirmLabel || 'Confirm'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </AppLayout>
   );
 }

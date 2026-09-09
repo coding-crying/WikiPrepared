@@ -1,0 +1,22 @@
+listen_addresses: "0.0.0.0:3111"
+keep_alive: 75
+
+cache:
+  size_mb: 128
+
+mbtiles:
+  paths:
+    - maps
+
+pmtiles:
+  paths:
+    - maps
+
+# Fonts served by miniserve alongside web assets instead
+# Martin font endpoints require specific naming; use miniserve for font files
+# fonts:
+#   - web/assets/fonts
+
+sprites:
+  paths:
+    - web/assets/sprites

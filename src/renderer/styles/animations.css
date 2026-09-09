@@ -1,4 +1,4 @@
-/* Storage bar flashing animation */
+/* Storage bar attention flash — runs 3 times then stops (was infinite) */
 @keyframes storage-flash {
   0%, 100% {
     opacity: 1;
@@ -9,7 +9,7 @@
 }
 
 .storage-flash {
-  animation: storage-flash 1s ease-in-out infinite;
+  animation: storage-flash 1s ease-in-out 3;
 }
 
 /* Loading spinner */

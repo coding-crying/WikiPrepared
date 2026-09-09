@@ -3,9 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <!-- CSP relaxed for development (webpack-dev-server needs unsafe-eval for HMR) -->
-    <!-- In production builds, this should be stricter -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline';" />
+    <!--
+      CSP: script-src is strict ('self' only, no unsafe-eval) in production.
+      React/MUI production builds do not require eval. The dev-only escape
+      hatch (unsafe-eval for webpack HMR) is injected at runtime by
+      src/main/index.js when the app runs unpackaged.
+    -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https:; font-src 'self' data:;" />
     <title>WikiPrepared</title>
   </head>
   <body>

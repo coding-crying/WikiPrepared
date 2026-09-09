@@ -10,6 +10,10 @@ const checkElectronAPI = () => {
   return true;
 };
 
+// Unsubscribe function for the drives:changed listener (module-scoped so
+// stopWatching can remove exactly the listener startWatching registered).
+let _drivesChangedUnsubscribe = null;
+
 export const useDrivesStore = create(
   devtools(
     (set, get) => ({
@@ -103,13 +107,15 @@ export const useDrivesStore = create(
 
         window.electronAPI.invoke('drives:watch:start');
 
-        // Listen for drive changes
-        window.electronAPI.on('drives:changed', (drives) => {
+        // Listen for drive changes; keep the unsubscribe function so
+        // stopWatching only removes OUR listener (off() nukes the channel).
+        const unsubscribe = window.electronAPI.on('drives:changed', (drives) => {
           console.log('Drives changed:', drives);
           set({ drives, lastScan: Date.now() });
           // Re-scan for ZIMs when drives change
           get().scanDrivesForZims(drives);
         });
+        _drivesChangedUnsubscribe = unsubscribe;
 
         set({ isWatching: true });
       },
@@ -118,7 +124,10 @@ export const useDrivesStore = create(
         if (!checkElectronAPI()) return;
 
         window.electronAPI.invoke('drives:watch:stop');
-        window.electronAPI.off('drives:changed');
+        if (typeof _drivesChangedUnsubscribe === 'function') {
+          _drivesChangedUnsubscribe();
+          _drivesChangedUnsubscribe = null;
+        }
         set({ isWatching: false });
       },
 

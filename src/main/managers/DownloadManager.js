@@ -114,17 +114,20 @@ class DownloadManager {
     try {
       // Get disk usage using df command on Unix or wmic on Windows
       const os = require('os');
-      const { execSync } = require('child_process');
+      const { execFileSync } = require('child_process');
 
       let freeSpace = 0;
       let totalSpace = 0;
       let filesystem = 'unknown';
 
       if (os.platform() === 'win32') {
-        // Windows: use wmic with PowerShell fallback
+        // Windows: use wmic with PowerShell fallback (argv-style, no shell)
         const driveLetter = downloadDir.charAt(0).toUpperCase();
         try {
-          const result = execSync(`wmic logicaldisk where "DeviceID='${driveLetter}:'" get FileSystem,FreeSpace,Size /format:csv`, { encoding: 'utf8' });
+          const result = execFileSync('wmic', [
+            'logicaldisk', 'where', `DeviceID='${driveLetter}:'`,
+            'get', 'FileSystem,FreeSpace,Size', '/format:csv',
+          ], { encoding: 'utf8' });
           const lines = result.trim().split('\n');
           if (lines.length >= 2) {
             const parts = lines[1].split(',');
@@ -136,8 +139,12 @@ class DownloadManager {
           }
         } catch (e) {
           try {
-            const psResult = execSync(
-              `powershell -NoProfile -Command "(Get-CimInstance Win32_LogicalDisk -Filter \\"DeviceID='${driveLetter}:'\\") | Select-Object FileSystem,FreeSpace,Size | ConvertTo-Json -Compress"`,
+            const psResult = execFileSync(
+              'powershell.exe',
+              [
+                '-NoProfile', '-NonInteractive', '-Command',
+                `(Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='${driveLetter}:'") | Select-Object FileSystem,FreeSpace,Size | ConvertTo-Json -Compress`,
+              ],
               { encoding: 'utf8' }
             );
             const parsed = JSON.parse(psResult.trim());
@@ -149,9 +156,9 @@ class DownloadManager {
           }
         }
       } else {
-        // Unix-like: use df
+        // Unix-like: use df (argv-style, no shell)
         try {
-          const result = execSync(`df -P "${downloadDir}"`, { encoding: 'utf8' });
+          const result = execFileSync('df', ['-P', downloadDir], { encoding: 'utf8' });
           const lines = result.trim().split('\n');
           if (lines.length >= 2) {
             const parts = lines[1].split(/\s+/);
@@ -164,10 +171,10 @@ class DownloadManager {
           // Get filesystem type
           if (os.platform() === 'darwin') {
             // macOS BSD df has no -T; use stat for filesystem type
-            const statFs = execSync(`stat -f %T "${downloadDir}"`, { encoding: 'utf8' }).trim();
+            const statFs = execFileSync('stat', ['-f', '%T', downloadDir], { encoding: 'utf8' }).trim();
             if (statFs) filesystem = statFs;
           } else {
-            const mountResult = execSync(`df -T "${downloadDir}"`, { encoding: 'utf8' });
+            const mountResult = execFileSync('df', ['-T', downloadDir], { encoding: 'utf8' });
             const mountLines = mountResult.trim().split('\n');
             if (mountLines.length >= 2) {
               const mountParts = mountLines[1].split(/\s+/);
@@ -403,33 +410,127 @@ class DownloadManager {
           await fs.ensureDir(dir);
       }
 
-      // Create write stream
-      const writer = fs.createWriteStream(download.destination);
+      // Disk-space pre-check: refuse to start when free space is obviously
+      // insufficient (only possible when we know both the target size and
+      // the volume's free space via statfs).
+      const expectedSize = download.zimInfo?.size || download.totalSize || 0;
+      try {
+        if (expectedSize > 0) {
+          const stats = await fs.promises.statfs(dir);
+          const freeBytes = stats.bsize * stats.bavail;
+          if (freeBytes > 0 && freeBytes < expectedSize * 1.05) {
+            const needGB = (expectedSize / 1024 ** 3).toFixed(1);
+            const freeGB = (freeBytes / 1024 ** 3).toFixed(1);
+            throw new Error(`Not enough disk space to download ${download.filename}: need ~${needGB} GB, only ${freeGB} GB free.`);
+          }
+        }
+      } catch (spaceError) {
+        // Re-throw our own "not enough space" error; ignore statfs failures
+        // (unsupported filesystems, permission issues) — the download can
+        // still proceed and will fail naturally if the disk fills.
+        if (spaceError.message && spaceError.message.startsWith('Not enough disk space')) {
+          throw spaceError;
+        }
+        console.warn('Could not check free disk space before download:', spaceError.message);
+      }
+
+      // HTTP Range resume: if a partial file exists and the server supports
+      // ranges, append from where we left off instead of restarting at 0.
+      let resumeFrom = 0;
+      let canResume = false;
+      try {
+        if (await fs.pathExists(download.destination)) {
+          const partialStats = await fs.stat(download.destination);
+          if (partialStats.size > 0) {
+            const headResponse = await axios({
+              method: 'head',
+              url: download.url,
+              timeout: 15000,
+              headers: { 'User-Agent': 'Kiwix-USB-Updater/0.1.0' },
+            });
+            const acceptsRanges = String(headResponse.headers['accept-ranges'] || '').toLowerCase() === 'bytes';
+            const remoteLength = parseInt(headResponse.headers['content-length'], 10);
+            const remoteSizeKnown = Number.isFinite(remoteLength) && remoteLength > 0;
+            const localIsPartial = !remoteSizeKnown || partialStats.size < remoteLength;
+
+            if (acceptsRanges && localIsPartial) {
+              resumeFrom = partialStats.size;
+              canResume = true;
+              console.log(`Resuming ${download.filename} from byte ${resumeFrom}`);
+            } else if (!localIsPartial && download.filename?.toLowerCase().endsWith('.zim')) {
+              // File looks complete — fall through to normal flow; the
+              // size-match verify path at the top of startDownload will
+              // have already handled this on the next call.
+              console.log(`Partial file is already full size; restarting verification flow.`);
+            } else {
+              // Server does not support ranges (or file is complete for a
+              // non-zim): start fresh.
+              resumeFrom = 0;
+            }
+          }
+        }
+      } catch (resumeProbeError) {
+        console.warn('Resume probe failed, starting fresh:', resumeProbeError.message);
+        resumeFrom = 0;
+        canResume = false;
+      }
+
+      // Create write stream (append when resuming, truncate otherwise)
+      let writer = fs.createWriteStream(download.destination, {
+        flags: canResume ? 'a' : 'w',
+      });
 
       // Make HTTP request
+      const requestHeaders = {
+        'User-Agent': 'Kiwix-USB-Updater/0.1.0',
+      };
+      if (canResume && resumeFrom > 0) {
+        requestHeaders['Range'] = `bytes=${resumeFrom}-`;
+      }
+
       const response = await axios({
         method: 'get',
         url: download.url,
         responseType: 'stream',
         cancelToken: source.token,
         timeout: 30000,
-        headers: {
-          'User-Agent': 'Kiwix-USB-Updater/0.1.0',
-        },
+        headers: requestHeaders,
       });
+
+      // If the server ignored our Range request and returns 200 instead of
+      // 206, we must not append duplicate bytes — truncate and restart.
+      if (canResume && response.status !== 206) {
+        console.warn(`Server ignored Range request (status ${response.status}); restarting download from scratch.`);
+        await new Promise((resolve) => {
+          writer.once('close', resolve);
+          writer.destroy();
+        });
+        writer = fs.createWriteStream(download.destination, { flags: 'w' });
+        canResume = false;
+        resumeFrom = 0;
+      }
 
       // Get total size from headers
       const totalSize = parseInt(response.headers['content-length'], 10);
-      download.totalSize = totalSize;
+      // For resumed downloads the stream only delivers the remaining bytes;
+      // progress must be computed against the full file size.
+      const remainingLength = Number.isFinite(totalSize) ? totalSize : 0;
+      const totalFileBytes = canResume ? resumeFrom + remainingLength : remainingLength;
+      if (Number.isFinite(totalFileBytes) && totalFileBytes > 0) {
+        download.totalSize = totalFileBytes;
+      }
 
       // Set up progress tracking
       const progress = progressStream({
-        length: totalSize,
+        length: remainingLength > 0 ? remainingLength : undefined,
         time: 1000, // Update every second
       });
 
       // If there is no server checksum, hash the downloaded bytes and then verify the file on disk matches.
-      const downloadHash = (!expectedSha256 && isZim) ? crypto.createHash('sha256') : null;
+      // NOTE: when resuming, the hash starts from the resumed byte — we cannot
+      // stream-hash an append, so resume downloads skip inline hashing and rely
+      // on post-download verification (expectedSha256 or size match).
+      const downloadHash = (!expectedSha256 && isZim && !canResume) ? crypto.createHash('sha256') : null;
       if (downloadHash) {
         progress.on('data', (chunk) => {
           try {
@@ -440,9 +541,12 @@ class DownloadManager {
         });
       }
 
+      const alreadyDownloaded = canResume ? resumeFrom : 0;
       progress.on('progress', (progressInfo) => {
-        download.downloadedSize = progressInfo.transferred;
-        download.progress = progressInfo.percentage;
+        download.downloadedSize = alreadyDownloaded + progressInfo.transferred;
+        download.progress = totalFileBytes > 0
+          ? Math.min(100, (download.downloadedSize / totalFileBytes) * 100)
+          : progressInfo.percentage;
         download.speed = progressInfo.speed;
         download.eta = progressInfo.eta;
 
@@ -453,11 +557,13 @@ class DownloadManager {
       // Pipe the download
       response.data.pipe(progress).pipe(writer);
 
-      // Wait for completion
+      // Wait for completion (listen on ALL streams in the chain — a missing
+      // error listener on the intermediate progress stream causes silent hangs)
       await new Promise((resolve, reject) => {
         writer.on('finish', resolve);
         writer.on('error', reject);
         response.data.on('error', reject);
+        progress.on('error', reject);
       });
 
       // Automatic SHA-256 verification for ZIM downloads (critical safeguard).
@@ -502,12 +608,39 @@ class DownloadManager {
     } catch (error) {
       console.error(`Download failed: ${download.filename}`, error);
 
+      // Release the write stream so the fd isn't held during cleanup.
+      try {
+        if (typeof writer !== 'undefined' && writer && !writer.destroyed) {
+          writer.destroy();
+        }
+      } catch (_e) {
+        // ignore
+      }
+
       if (axios.isCancel(error)) {
-        download.status = DOWNLOAD_STATUS.CANCELLED;
-        download.error = 'Download cancelled';
+        const cancelMessage = String(error?.message || '');
+        if (cancelMessage.includes('paused')) {
+          // Pause: keep the partial file so resume can continue from it.
+          download.status = DOWNLOAD_STATUS.PAUSED;
+          download.error = 'Download paused';
+        } else {
+          download.status = DOWNLOAD_STATUS.CANCELLED;
+          download.error = 'Download cancelled';
+          // Remove the partial file entirely.
+          try {
+            if (await fs.pathExists(download.destination)) {
+              await fs.remove(download.destination);
+            }
+          } catch (_e) {
+            // ignore
+          }
+        }
       } else {
         download.status = DOWNLOAD_STATUS.ERROR;
         download.error = error.message;
+        // Keep the partial file: resume can continue from it via HTTP Range
+        // instead of throwing away gigabytes. (Wipe it via Cancel or
+        // Clear Cache if the user wants the space back.)
       }
 
       this.emitProgress(downloadId);
@@ -556,12 +689,12 @@ class DownloadManager {
       throw new Error('Download not found');
     }
 
-    if (download.status !== DOWNLOAD_STATUS.PAUSED) {
-      throw new Error('Download is not paused');
+    const resumable = download.status === DOWNLOAD_STATUS.PAUSED ||
+                      download.status === DOWNLOAD_STATUS.ERROR;
+    if (!resumable) {
+      throw new Error('Download is not paused or errored');
     }
 
-    // Note: Full resume support would require HTTP range requests
-    // For now, we'll restart the download
     console.log(`Resuming download: ${download.filename}`);
 
     return await this.startDownload(downloadId);

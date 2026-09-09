@@ -29,7 +29,9 @@ jobs:
               dist/*.deb
               dist/latest-linux.yml
           - label: Windows
-            os: windows-latest
+            # windows-latest now ships VS 2026 which @electron/node-gyp 10.2 can't parse.
+            # Pin to windows-2022 (VS 2022) until we upgrade node-gyp.
+            os: windows-2022
             script: npm run dist:win -- --publish never
             artifacts: |
               dist/*Setup*.exe

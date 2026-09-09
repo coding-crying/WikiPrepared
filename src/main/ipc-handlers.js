@@ -1,5 +1,6 @@
 const { ipcMain, app, shell } = require('electron');
 const path = require('path');
+const os = require('os');
 const { IPC_CHANNELS } = require('../shared/ipc-channels');
 const DriveManager = require('./managers/DriveManager');
 const ZimManager = require('./managers/ZimManager');
@@ -18,6 +19,85 @@ const updateService = new UpdateService();
 const fileService = new FileService();
 const usbAuditService = new USBAuditService();
 const USB_LIBRARY_DIRNAME = 'Library (.zim files)';
+
+// Cooperative cancellation flag for the current TRANSFER_START operation.
+// Checked between files and between stream chunks; reset at transfer start.
+let transferCancelRequested = false;
+
+function requestTransferCancel() {
+  transferCancelRequested = true;
+}
+
+/**
+ * Build the set of path prefixes the renderer may operate on via file IPC:
+ * the download directory, the app's userData dir, and every mounted
+ * removable/USB drive. Anything outside these scopes is rejected.
+ */
+async function getAllowedPathScopes() {
+  const scopes = new Set();
+  try {
+    scopes.add(path.resolve(downloadManager.getDownloadDir()));
+  } catch (_e) { /* ignore */ }
+  try {
+    scopes.add(path.resolve(app.getPath('userData')));
+  } catch (_e) { /* ignore */ }
+  try {
+    const drives = await driveManager.listDrives();
+    for (const drive of drives) {
+      const mps = Array.isArray(drive.mountpoints) ? drive.mountpoints : [];
+      for (const mp of mps) {
+        if (mp?.path) scopes.add(path.resolve(mp.path));
+      }
+      if (drive.mountpoint) scopes.add(path.resolve(drive.mountpoint));
+    }
+  } catch (_e) { /* ignore */ }
+  return Array.from(scopes).filter(Boolean);
+}
+
+/**
+ * True when targetPath resolves inside one of the allowed scopes
+ * (or equals a scope root). Prevents path traversal via ../ sequences.
+ */
+function isPathInScopes(targetPath, scopes) {
+  if (typeof targetPath !== 'string' || targetPath.length === 0) return false;
+  const resolved = path.resolve(targetPath);
+  return scopes.some((scope) => resolved === scope || resolved.startsWith(scope + path.sep));
+}
+
+/**
+ * Combined guard: resolve current scopes and assert the given paths are
+ * within them. Throws a user-readable error when blocked.
+ */
+async function assertPathsInScope(label, ...candidatePaths) {
+  const scopes = await getAllowedPathScopes();
+  for (const p of candidatePaths) {
+    if (p && !isPathInScopes(p, scopes)) {
+      throw new Error(`${label} blocked: path is outside the download folder and connected USB drives.`);
+    }
+  }
+}
+
+// Hosts the app is allowed to download content from. The catalog only ever
+// points at these; anything else from the renderer is rejected (SSRF guard).
+const ALLOWED_DOWNLOAD_HOSTS = new Set([
+  'dumps.wikimedia.org',
+  'download.kiwix.org',
+  'mirror.download.kiwix.org',
+  'archive.org',
+]);
+
+function isAllowedDownloadUrl(url) {
+  if (typeof url !== 'string') return false;
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch (_e) {
+    return false;
+  }
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return false;
+  const host = parsed.hostname.toLowerCase();
+  return ALLOWED_DOWNLOAD_HOSTS.has(host) || host.endsWith('.kiwix.org') || host.endsWith('.wikimedia.org');
+}
 
 function getUsbRootFromDownloadDestination(destination) {
   if (!destination) {
@@ -195,6 +275,16 @@ function setupIpcHandlers() {
 
   ipcMain.handle(IPC_CHANNELS.DOWNLOAD_SET_LOCATION, async (event, location) => {
     try {
+      // The renderer may only pick directories under the user's home
+      // (via the native folder dialog); anything else is rejected.
+      const homeDir = path.resolve(os.homedir());
+      if (typeof location !== 'string' || location.length === 0) {
+        throw new Error('Invalid download location');
+      }
+      const resolved = path.resolve(location);
+      if (resolved !== homeDir && !resolved.startsWith(homeDir + path.sep)) {
+        throw new Error('Download location must be inside your user folder.');
+      }
       downloadManager.setDownloadDir(location);
       return { success: true, path: downloadManager.getDownloadDir() };
     } catch (error) {
@@ -205,6 +295,14 @@ function setupIpcHandlers() {
 
   ipcMain.handle(IPC_CHANNELS.DOWNLOAD_ADD, async (event, zimInfo, destination) => {
     try {
+      // SSRF guard: only allow downloads from the trusted content hosts.
+      if (!isAllowedDownloadUrl(zimInfo?.url)) {
+        throw new Error(`Download blocked: '${zimInfo?.url || 'missing URL'}' is not an allowed content source.`);
+      }
+      // Destination (if provided) must be a connected USB drive.
+      if (destination) {
+        await assertPathsInScope('Download destination', destination);
+      }
       return await downloadManager.addToQueue(zimInfo, destination);
     } catch (error) {
       console.error('Error adding download:', error);
@@ -369,9 +467,16 @@ function setupIpcHandlers() {
   // ========================================
 
   ipcMain.handle(IPC_CHANNELS.TRANSFER_START, async (event, { destination, filesToTransfer, selectedReaders = [], overwriteExisting = false }) => {
+    // Declared outside try so cancel-cleanup in catch can access it.
+    let fileInfos = [];
     try {
       const fs = require('fs-extra');
       const downloadDir = downloadManager.getDownloadDir();
+
+      // Destination must be a connected USB drive (scope check).
+      await assertPathsInScope('Transfer destination', destination);
+
+      transferCancelRequested = false;
 
       console.log('Starting transfer from:', downloadDir);
       console.log('Transfer destination:', destination);
@@ -394,7 +499,7 @@ function setupIpcHandlers() {
 
       // Calculate total size
       let totalSize = 0;
-      const fileInfos = [];
+      fileInfos = [];
 
       // Ensure the visible ZIM library folder exists
       const libraryDir = path.join(destination, USB_LIBRARY_DIRNAME);
@@ -419,6 +524,9 @@ function setupIpcHandlers() {
 
 	      // Copy each file
 	      for (const fileInfo of fileInfos) {
+	        if (transferCancelRequested) {
+	          throw new Error('Transfer cancelled by user');
+	        }
 	        console.log(`Transferring: ${fileInfo.name}`);
 
         // Send initial progress for this file
@@ -464,33 +572,39 @@ function setupIpcHandlers() {
 		              const readStream = fs.createReadStream(fileInfo.sourcePath);
 		              const writeStream = fs.createWriteStream(fileInfo.destinationPath);
 
-	              let copiedBytes = 0;
-	              const startTime = Date.now();
+		              let copiedBytes = 0;
+		              const startTime = Date.now();
 
-	              readStream.on('data', (chunk) => {
-	                copiedBytes += chunk.length;
-	                transferredSize += chunk.length;
+		              readStream.on('data', (chunk) => {
+		                if (transferCancelRequested) {
+		                  readStream.destroy();
+		                  writeStream.destroy();
+		                  reject(new Error('Transfer cancelled by user'));
+		                  return;
+		                }
+		                copiedBytes += chunk.length;
+		                transferredSize += chunk.length;
 
-	                const elapsed = (Date.now() - startTime) / 1000; // seconds
-	                const speed = elapsed > 0 ? copiedBytes / elapsed : 0;
+		                const elapsed = (Date.now() - startTime) / 1000; // seconds
+		                const speed = elapsed > 0 ? copiedBytes / elapsed : 0;
 
-	                // Send progress update
-	                windows.forEach((window) => {
-	                  window.webContents.send(IPC_CHANNELS.TRANSFER_PROGRESS, {
-	                    currentFile: fileInfo.name,
-	                    progress: (transferredSize / totalSize) * 100,
-	                    transferredSize,
-	                    totalSize,
-	                    speed
-	                  });
-	                });
-	              });
+		                // Send progress update
+		                windows.forEach((window) => {
+		                  window.webContents.send(IPC_CHANNELS.TRANSFER_PROGRESS, {
+		                    currentFile: fileInfo.name,
+		                    progress: (transferredSize / totalSize) * 100,
+		                    transferredSize,
+		                    totalSize,
+		                    speed
+		                  });
+		                });
+		              });
 
-	              readStream.on('error', reject);
-	              writeStream.on('error', reject);
-	              writeStream.on('finish', resolve);
+		              readStream.on('error', reject);
+		              writeStream.on('error', reject);
+		              writeStream.on('finish', resolve);
 
-	              readStream.pipe(writeStream);
+		              readStream.pipe(writeStream);
 		            });
 		          }
 
@@ -518,9 +632,11 @@ function setupIpcHandlers() {
 	          let expectedSha256 = await readShaFile(`${fileInfo.sourcePath}.sha256`);
 	          if (!expectedSha256) {
 	            // Fall back to hashing the source file; this catches transfer corruption even without a server checksum.
+	            if (transferCancelRequested) throw new Error('Transfer cancelled by user');
 	            expectedSha256 = await fileService.calculateChecksum(fileInfo.sourcePath, 'sha256');
 	          }
 
+	          if (transferCancelRequested) throw new Error('Transfer cancelled by user');
 	          const actualSha256 = await fileService.calculateChecksum(fileInfo.destinationPath, 'sha256');
 	          if (actualSha256.toLowerCase() !== expectedSha256.toLowerCase()) {
 	            try {
@@ -530,6 +646,8 @@ function setupIpcHandlers() {
 	            }
 	            throw new Error(`Checksum mismatch after transfer for ${fileInfo.name}`);
 	          }
+
+	          fileInfo.verified = true;
 
 	          // Write checksum alongside the USB file for later auditing.
 	          try {
@@ -558,6 +676,9 @@ function setupIpcHandlers() {
         console.log('Installing selected readers to USB:', selectedReaders);
         const readerVersions = await kiwixManager.getLatestVersions();
         for (const platform of selectedReaders) {
+          if (transferCancelRequested) {
+            throw new Error('Transfer cancelled by user');
+          }
           windows.forEach((window) => {
             window.webContents.send(IPC_CHANNELS.TRANSFER_PROGRESS, {
               currentFile: `Installing Kiwix reader (${platform})`,
@@ -601,6 +722,31 @@ function setupIpcHandlers() {
       return { success: true, filesTransferred: fileInfos.length };
     } catch (error) {
       console.error('Transfer failed:', error);
+
+      // On user cancellation, clean up unverified destination files so no
+      // corrupt or unconfirmed partial ZIM is left on the stick.
+      if (transferCancelRequested && error.message === 'Transfer cancelled by user') {
+        try {
+          const fs = require('fs-extra');
+          for (const fileInfo of fileInfos) {
+            if (fileInfo.verified) continue; // fully copied AND checksum-confirmed: keep
+            const destExists = await fs.pathExists(fileInfo.destinationPath);
+            if (destExists) {
+              await fs.remove(fileInfo.destinationPath);
+              console.log(`Removed unverified file after cancel: ${fileInfo.name}`);
+            }
+            // Also remove a stale sidecar from any previous interrupted attempt.
+            const sidecarExists = await fs.pathExists(`${fileInfo.destinationPath}.sha256`);
+            if (sidecarExists) {
+              await fs.remove(`${fileInfo.destinationPath}.sha256`);
+              console.log(`Removed stale sidecar after cancel: ${fileInfo.name}.sha256`);
+            }
+          }
+        } catch (cleanupError) {
+          console.warn('Cleanup after transfer cancel failed:', cleanupError.message);
+        }
+      }
+
       const windows = require('electron').BrowserWindow.getAllWindows();
       windows.forEach((window) => {
         window.webContents.send(IPC_CHANNELS.TRANSFER_ERROR, {
@@ -611,6 +757,12 @@ function setupIpcHandlers() {
     }
   });
 
+  ipcMain.handle(IPC_CHANNELS.TRANSFER_CANCEL, async () => {
+    console.log('Transfer cancellation requested');
+    requestTransferCancel();
+    return { success: true, cancelling: transferCancelRequested };
+  });
+
   // ========================================
   // USB Audit / Integrity
   // ========================================
@@ -618,6 +770,8 @@ function setupIpcHandlers() {
   ipcMain.handle(IPC_CHANNELS.USB_AUDIT_SCAN, async (_event, usbPath, options = {}) => {
     const windows = require('electron').BrowserWindow.getAllWindows();
     try {
+      // Audit target must be a connected USB drive.
+      await assertPathsInScope('USB audit', usbPath);
       const res = await usbAuditService.scan(usbPath, options, (progress) => {
         windows.forEach((window) => {
           window.webContents.send(IPC_CHANNELS.USB_AUDIT_PROGRESS, {
@@ -679,6 +833,9 @@ function setupIpcHandlers() {
 
   ipcMain.handle(IPC_CHANNELS.KIWIX_DOWNLOAD, async (event, platform, destination) => {
     try {
+      if (destination) {
+        await assertPathsInScope('Reader download', destination);
+      }
       return await kiwixManager.downloadReader(platform, destination);
     } catch (error) {
       console.error('Error downloading Kiwix reader:', error);
@@ -688,6 +845,8 @@ function setupIpcHandlers() {
 
   ipcMain.handle(IPC_CHANNELS.KIWIX_INSTALL, async (event, platform, usbPath) => {
     try {
+      // usbPath must be a connected USB drive (prevents traversal writes).
+      await assertPathsInScope('Reader install', usbPath);
       return await kiwixManager.installToUSB(platform, usbPath);
     } catch (error) {
       console.error('Error installing Kiwix reader:', error);
@@ -737,6 +896,7 @@ function setupIpcHandlers() {
 
   ipcMain.handle(IPC_CHANNELS.FILE_COPY, async (event, source, destination) => {
     try {
+      await assertPathsInScope('File copy', source, destination);
       return await fileService.copyFile(source, destination, (progress) => {
         const windows = require('electron').BrowserWindow.getAllWindows();
         windows.forEach((window) => {
@@ -756,6 +916,7 @@ function setupIpcHandlers() {
 
   ipcMain.handle(IPC_CHANNELS.FILE_VERIFY, async (event, filepath, checksum) => {
     try {
+      await assertPathsInScope('File verify', filepath);
       return await fileService.verifyChecksum(filepath, checksum);
     } catch (error) {
       console.error('Error verifying file:', error);
@@ -765,6 +926,7 @@ function setupIpcHandlers() {
 
   ipcMain.handle(IPC_CHANNELS.FILE_DELETE, async (event, filepath) => {
     try {
+      await assertPathsInScope('File delete', filepath);
       return await fileService.deleteFile(filepath);
     } catch (error) {
       console.error('Error deleting file:', error);
@@ -774,6 +936,7 @@ function setupIpcHandlers() {
 
   ipcMain.handle(IPC_CHANNELS.FILE_GET_SIZE, async (event, filepath) => {
     try {
+      await assertPathsInScope('File size check', filepath);
       return await fileService.getFileSize(filepath);
     } catch (error) {
       console.error('Error getting file size:', error);

@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>WikiPrepared Maps</title>
+  <link rel="stylesheet" href="https://unpkg.com/maplibregl@5.3.0/dist/maplibre-gl.css">
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <!-- Search Bar -->
+  <div id="search-container">
+    <button id="search-toggle" class="glass-btn" title="Toggle search">🔍</button>
+    <div id="search-bar" class="glass-panel">
+      <input type="text" id="search-input" placeholder="Search POIs..." autocomplete="off">
+      <button id="search-btn" class="accent-btn" title="Search">→</button>
+      <div id="search-results" class="glass-panel hidden"></div>
+    </div>
+  </div>
+
+  <!-- Map Container -->
+  <div id="map"></div>
+
+  <!-- POI Category Toggle Buttons -->
+  <div id="poi-panel" class="glass-panel">
+    <h3 class="panel-title">Preparedness Layers</h3>
+    <div id="poi-buttons">
+      <button class="poi-btn active" data-category="hospital" title="Hospitals">
+        <span class="poi-icon">🏥</span><span class="poi-label">Hospital</span>
+      </button>
+      <button class="poi-btn active" data-category="shelter" title="Shelters">
+        <span class="poi-icon">🏕️</span><span class="poi-label">Shelter</span>
+      </button>
+      <button class="poi-btn active" data-category="water" title="Water Sources">
+        <span class="poi-icon">💧</span><span class="poi-label">Water</span>
+      </button>
+      <button class="poi-btn active" data-category="fuel" title="Fuel Stations">
+        <span class="poi-icon">⛽</span><span class="poi-label">Fuel</span>
+      </button>
+      <button class="poi-btn active" data-category="police" title="Police">
+        <span class="poi-icon">🚔</span><span class="poi-label">Police</span>
+      </button>
+      <button class="poi-btn active" data-category="pharmacy" title="Pharmacies">
+        <span class="poi-icon">💊</span><span class="poi-label">Pharmacy</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Legend Panel -->
+  <div id="legend-panel" class="glass-panel">
+    <button id="legend-toggle" class="glass-btn" title="Toggle legend">☰</button>
+    <div id="legend-content">
+      <h3 class="panel-title">Legend</h3>
+      <div id="legend-items">
+        <div class="legend-row"><span class="legend-swatch" style="background:#0f1724;"></span> Water</div>
+        <div class="legend-row"><span class="legend-swatch" style="background:#0b1a0b;"></span> Forest</div>
+        <div class="legend-row"><span class="legend-swatch" style="background:#0a1f0a;"></span> Parks</div>
+        <div class="legend-row"><span class="legend-swatch" style="background:#111111;"></span> Residential</div>
+        <div class="legend-row"><span class="legend-swatch" style="background:#0f0d0a;"></span> Industrial</div>
+        <div class="legend-row"><span class="legend-line" style="background:#4a4a4a;"></span> Motorway</div>
+        <div class="legend-row"><span class="legend-line" style="background:#333333;"></span> Primary Road</div>
+        <div class="legend-row"><span class="legend-line" style="background:#2c2c2c;"></span> Secondary Road</div>
+        <div class="legend-row"><span class="legend-swatch" style="background:#161616;"></span> Buildings</div>
+        <div class="legend-row"><span class="legend-swatch" style="background:#10b981;"></span> Preparedness POI</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Dark Mode Toggle (placeholder) -->
+  <div id="theme-toggle" class="glass-panel">
+    <button id="theme-btn" class="glass-btn" title="Toggle light/dark mode">🌙</button>
+  </div>
+
+  <!-- Attribution will be added by MapLibre -->
+  <script src="https://unpkg.com/maplibregl@5.3.0/dist/maplibre-gl.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

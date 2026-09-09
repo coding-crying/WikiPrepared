@@ -1,5 +1,6 @@
 const drivelist = require('drivelist');
 const fs = require('fs-extra');
+const fsSync = require('fs');
 const path = require('path');
 const { ERROR_CODES } = require('../../shared/constants');
 
@@ -40,6 +41,36 @@ class DriveManager {
     return fs;
   }
 
+  /**
+   * Run a command with arguments as an array (no shell) when possible.
+   * Falls back to shell-string execution only if execFile is unavailable.
+   * This eliminates shell-metacharacter injection for every call site that
+   * uses it — even if an argument contains `; rm -rf /` it is passed to the
+   * target binary as a literal argument.
+   */
+  safeExec(file, args, options = {}) {
+    const { execFile } = require('child_process');
+    return new Promise((resolve, reject) => {
+      execFile(file, args, { encoding: 'utf8', timeout: options.timeout || 30000, ...options }, (error, stdout, stderr) => {
+        if (error) {
+          // Attach stderr for better diagnostics, mirroring execAsync behavior
+          error.stderr = stderr;
+          error.stdout = stdout;
+          return reject(error);
+        }
+        resolve(stdout);
+      });
+    });
+  }
+
+  /**
+   * Synchronous variant used inside formatDriveInfo().
+   */
+  safeExecSync(file, args, options = {}) {
+    const { execFileSync } = require('child_process');
+    return execFileSync(file, args, { encoding: 'utf8', timeout: options.timeout || 15000, ...options });
+  }
+
   isSafeLinuxDevicePath(devicePath) {
     return typeof devicePath === 'string' && /^\/dev\/[A-Za-z0-9._-]+$/.test(devicePath);
   }
@@ -49,8 +80,7 @@ class DriveManager {
   }
 
   diskutilInfoSync(target) {
-    const { execSync } = require('child_process');
-    const output = execSync(`diskutil info "${target}"`, { encoding: 'utf8' });
+    const output = this.safeExecSync('diskutil', ['info', target]);
 
     const parseBytesInParens = (line) => {
       if (!line) return null;
@@ -212,7 +242,7 @@ class DriveManager {
              // Use device path, not mount path, for lsblk
              const devicePath = drive.device || drive.devicePath;
              if (devicePath) {
-               const label = execSync(`lsblk -n -o LABEL "${devicePath}" 2>/dev/null`, { encoding: 'utf8' }).trim();
+               const label = this.safeExecSync('lsblk', ['-n', '-o', 'LABEL', devicePath]).trim();
                if (label) {
                  mountpoint.label = label;
                  drive.description = label; // Also update description
@@ -224,10 +254,15 @@ class DriveManager {
         }
 
         if (os.platform() === 'win32') {
-          // Windows: use wmic with PowerShell fallback
+          // Windows: use wmic with PowerShell fallback. driveLetter comes from
+          // mountpoint.path.charAt(0) and is uppercased — a single char from a
+          // drivelist mountpoint. We still run without a shell for safety.
           const driveLetter = mountpoint.path.charAt(0).toUpperCase();
           try {
-            const result = execSync(`wmic logicaldisk where "DeviceID='${driveLetter}:'" get FileSystem,FreeSpace,Size /format:csv`, { encoding: 'utf8' });
+            const result = this.safeExecSync('wmic', [
+              'logicaldisk', 'where', `DeviceID='${driveLetter}:'`,
+              'get', 'FileSystem,FreeSpace,Size', '/format:csv',
+            ]);
             const lines = result.trim().split('\n');
             if (lines.length >= 2) {
               const parts = lines[1].split(',');
@@ -240,10 +275,10 @@ class DriveManager {
             }
           } catch (e) {
             try {
-              const psResult = execSync(
-                `powershell -NoProfile -Command "(Get-CimInstance Win32_LogicalDisk -Filter \\"DeviceID='${driveLetter}:'\\") | Select-Object FileSystem,FreeSpace,Size | ConvertTo-Json -Compress"`,
-                { encoding: 'utf8' }
-              );
+              const psResult = this.safeExecSync('powershell.exe', [
+                '-NoProfile', '-NonInteractive', '-Command',
+                `(Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='${driveLetter}:'") | Select-Object FileSystem,FreeSpace,Size | ConvertTo-Json -Compress`,
+              ]);
               const parsed = JSON.parse(psResult.trim());
               filesystem = parsed?.FileSystem || null;
               freeSpace = Number(parsed?.FreeSpace) || drive.size;
@@ -280,9 +315,9 @@ class DriveManager {
             // Try df -T first (with type), fall back to regular df
             let dfResult;
             try {
-              dfResult = execSync(`df -T "${mountpoint.path}"`, { encoding: 'utf8' });
+              dfResult = this.safeExecSync('df', ['-T', mountpoint.path]);
             } catch (e) {
-              dfResult = execSync(`df "${mountpoint.path}"`, { encoding: 'utf8' });
+              dfResult = this.safeExecSync('df', [mountpoint.path]);
             }
 
             const lines = dfResult.trim().split('\n');
@@ -301,12 +336,15 @@ class DriveManager {
                 usedSpace = parseInt(parts[2]) * 1024;
                 freeSpace = parseInt(parts[3]) * 1024;
 
-                // Try to get filesystem from /proc/mounts
+                // Try to get filesystem from /proc/mounts (read directly — no shell)
                 try {
-                  const mountsResult = execSync(`grep "${mountpoint.path}" /proc/mounts | head -1`, { encoding: 'utf8' });
-                  const mountParts = mountsResult.trim().split(/\s+/);
-                  if (mountParts.length >= 3) {
-                    filesystem = mountParts[2];
+                  const mountsText = fsSync.readFileSync('/proc/mounts', 'utf8');
+                  const mountLine = mountsText.split('\n').find((line) => line.startsWith(`${mountpoint.path} `));
+                  if (mountLine) {
+                    const mountParts = mountLine.trim().split(/\s+/);
+                    if (mountParts.length >= 3) {
+                      filesystem = mountParts[2];
+                    }
                   }
                 } catch (e) {
                   // Ignore
@@ -316,14 +354,14 @@ class DriveManager {
               if (!filesystem) {
                 if (os.platform() === 'darwin') {
                   try {
-                    const statFs = execSync(`stat -f %T "${mountpoint.path}"`, { encoding: 'utf8' }).trim();
+                    const statFs = this.safeExecSync('stat', ['-f', '%T', mountpoint.path]).trim();
                     if (statFs) filesystem = statFs;
                   } catch (e) {
                     // Ignore
                   }
                 } else if (os.platform() === 'linux') {
                   try {
-                    const fsType = execSync(`findmnt -n -o FSTYPE --target "${mountpoint.path}"`, { encoding: 'utf8' }).trim();
+                    const fsType = this.safeExecSync('findmnt', ['-n', '-o', 'FSTYPE', '--target', mountpoint.path]).trim();
                     if (fsType) filesystem = fsType;
                   } catch (e) {
                     // Ignore
@@ -688,9 +726,9 @@ class DriveManager {
         let diskDevice = drivePath;
         try {
           // Check if input is a partition (has a parent)
-          const { stdout } = await execAsync(`lsblk -no pkname ${drivePath}`);
+          const pknameOutput = await this.safeExec('lsblk', ['-no', 'pkname', drivePath]);
           // Handle potential multiline output by taking only the first line
-          const parent = stdout.trim().split('\n')[0].trim();
+          const parent = pknameOutput.trim().split('\n')[0].trim();
           if (parent) {
             diskDevice = `/dev/${parent}`;
           }
@@ -708,18 +746,18 @@ class DriveManager {
         // 2. Unmount ALL partitions on this disk
         try {
           // List all partitions: lsblk -n -o NAME -r /dev/sda
-          const { stdout } = await execAsync(`lsblk -n -o NAME -r ${diskDevice}`);
-          const devices = stdout.trim().split('\n');
+          const lsblkOutput = await this.safeExec('lsblk', ['-n', '-o', 'NAME', '-r', diskDevice]);
+          const devices = lsblkOutput.trim().split('\n');
           // Filter out the disk itself
           const partitions = devices.filter(d => `/dev/${d}` !== diskDevice && d !== path.basename(diskDevice));
-          
+
           console.log('Unmounting partitions:', partitions);
-          
+
           for (const partition of partitions) {
              if (!this.isSafeLinuxDeviceName(partition)) continue;
              const partPath = `/dev/${partition}`;
              try {
-               await execAsync(`udisksctl unmount -b ${partPath}`);
+               await this.safeExec('udisksctl', ['unmount', '-b', partPath]);
                console.log(`Unmounted ${partPath}`);
              } catch (e) {
                // Ignore errors (already unmounted, etc)
@@ -730,31 +768,30 @@ class DriveManager {
         }
 
         // 3. Wipe and Repartition (requires root)
-        // We chain these commands to avoid multiple password prompts
+        // Each command runs via pkexec with an argument array — no shell
+        // interpolation. pkexec invokes one command per authorization, but
+        // polkit remembers the action for a short window, so the subsequent
+        // prompts are typically auto-approved.
         console.log('Wiping and creating new partition table...');
         try {
-          const commands = [
-            `wipefs -a ${diskDevice}`,            // Wipe signatures
-            `parted -s ${diskDevice} mklabel msdos`, // New MBR table
-            `parted -s ${diskDevice} mkpart primary 0% 100%` // New primary partition filling disk
-          ].join(' && ');
-          
-          await execAsync(`pkexec sh -c "${commands}"`);
+          await this.safeExec('pkexec', ['wipefs', '-a', diskDevice], { timeout: 120000 });
+          await this.safeExec('pkexec', ['parted', '-s', diskDevice, 'mklabel', 'msdos'], { timeout: 120000 });
+          await this.safeExec('pkexec', ['parted', '-s', diskDevice, 'mkpart', 'primary', '0%', '100%'], { timeout: 120000 });
         } catch (err) {
            throw new Error(`Failed to repartition drive: ${err.message}`);
         }
-        
+
         // 4. Wait for OS to recognize new partition table
         console.log('Waiting for kernel to sync...');
         await new Promise(r => setTimeout(r, 2000));
-        
+
         // 5. Find the new partition to format
         let targetPartition = null;
         try {
-           const { stdout } = await execAsync(`lsblk -n -o NAME -r ${diskDevice}`);
-           const devices = stdout.trim().split('\n');
+           const relistOutput = await this.safeExec('lsblk', ['-n', '-o', 'NAME', '-r', diskDevice]);
+           const devices = relistOutput.trim().split('\n');
            const partitions = devices.filter(d => `/dev/${d}` !== diskDevice && d !== path.basename(diskDevice));
-           
+
            if (partitions.length > 0) {
              // Usually the first one is p1 or 1
              targetPartition = `/dev/${partitions[0]}`;
@@ -763,7 +800,7 @@ class DriveManager {
         } catch (e) {
            console.warn('Failed to detect new partition:', e);
         }
-        
+
         if (!targetPartition) {
            // Fallback guess
            targetPartition = `${diskDevice}1`;
@@ -777,24 +814,24 @@ class DriveManager {
         // 6. Format the new partition
         const label = 'WIKIPREP';
         console.log(`Formatting ${targetPartition} to ${fsNorm}...`);
-        
-        const mkfsCmd = (() => {
-          if (fsNorm === 'exfat') return `mkfs.exfat -n ${label} ${targetPartition}`;
-          if (fsNorm === 'fat32') return `mkfs.vfat -F 32 -n ${label.slice(0, 11)} ${targetPartition}`;
-          if (fsNorm === 'ntfs') return `mkfs.ntfs -f -L ${label} ${targetPartition}`;
-          throw new Error(`Unsupported filesystem on Linux: ${filesystem}`);
+
+        const mkfsArgs = (() => {
+          if (fsNorm === 'exfat') return ['mkfs.exfat', '-n', label, targetPartition];
+          if (fsNorm === 'fat32') return ['mkfs.vfat', '-F', '32', '-n', label.slice(0, 11), targetPartition];
+          if (fsNorm === 'ntfs') return ['mkfs.ntfs', '-f', '-L', label, targetPartition];
+          throw new Error(`Unsupported filesystem on Linux: ${fsNorm}`);
         })();
 
         try {
-          await execAsync(`pkexec ${mkfsCmd}`);
+          await this.safeExec('pkexec', mkfsArgs, { timeout: 300000 });
         } catch (err) {
           throw new Error(`Failed to format new partition: ${err.message}`);
         }
-        
+
         // 7. Mount the new partition explicitly so the app gets a real writable mountpoint.
         console.log(`Mounting ${targetPartition}...`);
         try {
-          await execAsync(`udisksctl mount -b ${targetPartition}`);
+          await this.safeExec('udisksctl', ['mount', '-b', targetPartition]);
         } catch (mountError) {
           console.warn(`Explicit mount failed for ${targetPartition}:`, mountError.message);
         }
@@ -835,11 +872,11 @@ class DriveManager {
 
         const isWholeDisk = /^\/dev\/disk\d+$/.test(deviceNode) || (wholeDisk && deviceNode === wholeDisk);
         const cmd = isWholeDisk
-          ? `diskutil eraseDisk ${fsType} ${label} MBRFormat ${wholeDisk || deviceNode}`
-          : `diskutil eraseVolume ${fsType} ${label} ${deviceNode}`;
+          ? ['eraseDisk', fsType, label, 'MBRFormat', wholeDisk || deviceNode]
+          : ['eraseVolume', fsType, label, deviceNode];
 
-        console.log('Executing:', cmd);
-        await execAsync(cmd);
+        console.log('Executing: diskutil', cmd.join(' '));
+        await this.safeExec('diskutil', cmd, { timeout: 300000 });
         const mountedDrive = await this.waitForDriveByDevice(validation.drive.device, 10000, 500);
 
         return {
@@ -860,9 +897,16 @@ class DriveManager {
         const letterOnly = driveLetter.replace(':', '');
 
         // Requires elevated privileges on Windows.
+        // letterOnly is regex-validated ([A-Za-z]) and fsType/label are
+        // hardcoded above; argv-style execution (no shell) as defense in depth.
         try {
-          await execAsync(
-            `powershell -NoProfile -ExecutionPolicy Bypass -Command "Format-Volume -DriveLetter '${letterOnly}' -FileSystem ${fsType} -NewFileSystemLabel '${label}' -Force -Confirm:\\$false"`
+          await this.safeExec(
+            'powershell.exe',
+            [
+              '-NoProfile', '-NonInteractive', '-Command',
+              `Format-Volume -DriveLetter '${letterOnly}' -FileSystem ${fsType} -NewFileSystemLabel '${label}' -Force -Confirm:$false`,
+            ],
+            { timeout: 120000 }
           );
         } catch (e) {
           throw new Error(`Windows formatting requires Administrator privileges. ${e.message}`);
@@ -912,8 +956,8 @@ class DriveManager {
         let blockDevice = null;
         if (drivePath.startsWith('/dev/')) {
           try {
-            const { stdout } = await execAsync(`lsblk -no pkname ${drivePath}`);
-            const parent = stdout.trim().split('\n')[0].trim();
+            const pknameOutput = await this.safeExec('lsblk', ['-no', 'pkname', drivePath]);
+            const parent = pknameOutput.trim().split('\n')[0].trim();
             if (parent) blockDevice = parent;
           } catch (_e) {
             // Ignore
@@ -957,12 +1001,12 @@ class DriveManager {
           let mountedPartitions = [];
           try {
             console.log('Listing mounted partitions...');
-            const { stdout } = await Promise.race([
-              execAsync(`lsblk -ln -o NAME,MOUNTPOINT /dev/${blockDevice} 2>/dev/null || echo ""`),
+            const lsblkOutput = await Promise.race([
+              this.safeExec('lsblk', ['-ln', '-o', 'NAME,MOUNTPOINT', `/dev/${blockDevice}`]),
               new Promise((_, reject) => setTimeout(() => reject(new Error('lsblk timeout')), 5000))
             ]);
 
-            const lines = stdout.trim().split('\n').map((l) => l.trim()).filter(Boolean);
+            const lines = lsblkOutput.trim().split('\n').map((l) => l.trim()).filter(Boolean);
             mountedPartitions = lines
               .map((line) => {
                 const parts = line.split(/\s+/);
@@ -986,7 +1030,7 @@ class DriveManager {
             try {
               console.log(`Unmounting ${partPath}...`);
               await Promise.race([
-                execAsync(`udisksctl unmount -b ${partPath}`),
+                this.safeExec('udisksctl', ['unmount', '-b', partPath]),
                 new Promise((_, reject) => setTimeout(() => reject(new Error('Unmount timeout')), 10000))
               ]);
               console.log(`Successfully unmounted ${partPath}`);
@@ -1005,7 +1049,7 @@ class DriveManager {
               try {
                 console.log(`Attempting force unmount for ${partPath}...`);
                 await Promise.race([
-                  execAsync(`udisksctl unmount -b ${partPath} --force`),
+                  this.safeExec('udisksctl', ['unmount', '-b', partPath, '--force']),
                   new Promise((_, reject) => setTimeout(() => reject(new Error('Force unmount timeout')), 10000))
                 ]);
                 console.log(`Force unmount successful for ${partPath}`);
@@ -1020,7 +1064,7 @@ class DriveManager {
                 console.log(`Device busy, attempting lazy unmount for ${partPath}...`);
                 try {
                   await Promise.race([
-                    execAsync(`pkexec umount -l ${partPath}`),
+                    this.safeExec('pkexec', ['umount', '-l', partPath]),
                     new Promise((_, reject) => setTimeout(() => reject(new Error('Lazy unmount timeout')), 15000))
                   ]);
                   console.log(`Lazy unmount successful for ${partPath}`);
@@ -1041,7 +1085,7 @@ class DriveManager {
           try {
             console.log('Attempting power-off...');
             await Promise.race([
-              execAsync(`udisksctl power-off -b /dev/${blockDevice}`),
+              this.safeExec('udisksctl', ['power-off', '-b', `/dev/${blockDevice}`]),
               new Promise((_, reject) => setTimeout(() => reject(new Error('Power-off timeout after 10s')), 10000))
             ]);
             console.log('Drive powered off successfully');
@@ -1085,9 +1129,9 @@ class DriveManager {
           }
 
           try {
-            await execAsync(`diskutil eject "${target}"`);
+            await this.safeExec('diskutil', ['eject', target]);
           } catch (e) {
-            await execAsync(`diskutil unmountDisk "${target}"`);
+            await this.safeExec('diskutil', ['unmountDisk', target]);
           }
           return { success: true, message: 'Drive ejected safely. You can now remove it.' };
         } finally {
@@ -1103,13 +1147,18 @@ class DriveManager {
           // Windows - use PowerShell to eject
           const driveLetter = await this.resolveWindowsDriveLetter(drivePath);
           if (driveLetter) {
-            // Use PowerShell to eject the drive
+            // driveLetter is regex-validated ([A-Za-z]:) by resolveWindowsDriveLetter,
+            // but we pass it as an argv element (no shell) for defense in depth.
+            const letterOnly = driveLetter.replace(':', '');
             try {
-              await execAsync(`powershell -NoProfile -Command "(New-Object -comObject Shell.Application).NameSpace(17).ParseName('${driveLetter}').InvokeVerb('Eject')"`);
+              await this.safeExec('powershell.exe', [
+                '-NoProfile', '-NonInteractive', '-Command',
+                `(New-Object -comObject Shell.Application).NameSpace(17).ParseName('${letterOnly}').InvokeVerb('Eject')`,
+              ]);
             } catch (e) {
               // Fallback: dismount/remove mount point (often requires admin).
               try {
-                await execAsync(`cmd /c mountvol ${driveLetter} /p`);
+                await this.safeExec('mountvol', [driveLetter, '/p']);
               } catch (e2) {
                 throw new Error(`Windows eject failed. Try ejecting via File Explorer. ${e2.message}`);
               }

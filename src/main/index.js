@@ -81,6 +81,21 @@ const createWindow = () => {
   const defaultDevUrl = 'http://localhost:3000/main_window/index.html';
   const initialRendererUrl = forgeRendererEntry || (isDev ? defaultDevUrl : null);
 
+  // Dev-only CSP relaxation: webpack HMR needs 'unsafe-eval'. Packaged builds
+  // keep the strict CSP from public/index.html.
+  if (isDev && initialRendererUrl) {
+    mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
+      callback({
+        responseHeaders: {
+          ...details.responseHeaders,
+          'Content-Security-Policy': [
+            "default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ws: http://localhost:* http://127.0.0.1:* https:; font-src 'self' data:;",
+          ],
+        },
+      });
+    });
+  }
+
   let rendererFallbackAttempted = false;
 
   // Log load errors and (in dev) fall back to a built file if the dev server isn't reachable.
