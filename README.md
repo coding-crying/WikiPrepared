@@ -1,163 +1,96 @@
 # WikiPrepared
 
-WikiPrepared is a cross-platform desktop app for building and maintaining offline Wikipedia USB drives.
+**Build and update an offline Wikipedia USB drive.**
 
-Its goal is to support long-term knowledge preservation and give people, schools, and communities more control over their own knowledge repositories instead of depending on always-online access.
+[![Latest release](https://img.shields.io/github/v/release/coding-crying/WikiPrepared?color=15803d)](https://github.com/coding-crying/WikiPrepared/releases/latest)
+[![Release builds](https://github.com/coding-crying/WikiPrepared/actions/workflows/release-builds.yml/badge.svg)](https://github.com/coding-crying/WikiPrepared/actions/workflows/release-builds.yml)
+[![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)](LICENSE)
+[![Website](https://img.shields.io/badge/website-wikiprepared.com-15803d)](https://www.wikiprepared.com)
 
-## Download
+[Download](https://www.wikiprepared.com/us/download) · [Documentation](docs/README.md) · [Report a bug](https://github.com/coding-crying/WikiPrepared/issues/new/choose)
 
-Prebuilt releases (Linux):
+Knowledge access is fragile when it depends on stable internet, centralized platforms, and changing policies. WikiPrepared helps people, schools, and communities keep their own copy of Wikipedia—not just a bookmark to it.
 
-- AppImage and `.deb` are published on GitHub Releases.
-- See the latest release: https://github.com/coding-crying/WikiPrepared/releases
+Choose your content, download it, and prepare a USB drive with Kiwix readers for offline access.
 
-## What WikiPrepared does
+## Download and get started
 
-- Detects removable USB drives and shows capacity, free space, and filesystem details.
-- Warns about filesystem limits (for example FAT32 and 4GB file limits) before large transfers.
-- Fetches and parses Wikipedia ZIM catalogs from Wikimedia/Kiwix dumps.
-- Filters ZIM content by language, topic, and scope (`mini`, `nopic`, `maxi`).
-- Downloads ZIM files with queueing, progress, pause/resume/cancel, and basic checksum support.
-- Scans existing USB sticks for installed `.zim` files and checks for update candidates.
-- Downloads and installs Kiwix readers for Windows, Linux, macOS, and Android.
-- Creates portable USB launchers (`START - Windows.bat`, `START - Mac.command`, `START - Linux.sh`).
-- Verifies downloads with SHA-256 when a server checksum is available. If a server checksum is not available, WikiPrepared computes and stores a local SHA-256 and marks the download as **unverified** in the UI.
+**Linux downloads are available now:** [AppImage and Debian package](https://github.com/coding-crying/WikiPrepared/releases/latest). Windows and macOS release downloads are coming soon. Successful CI builds are not the same as published, tested releases.
 
-## Platform notes (important)
+1. Download the Linux package that suits your system. For AppImage, enable **Allow executing file as program** in its file properties, then launch it. For `.deb`, use your package manager.
+2. Plug in a USB drive and choose **create new** or **update existing**.
+3. Select your Wikipedia content and the readers you need.
+4. Let the download and transfer finish, then safely eject the drive.
+5. Open the appropriate `START` launcher on the USB. Try it with the internet disconnected before putting the stick away.
 
-- **Windows / macOS / Linux file compatibility:** For best cross-platform compatibility, use **exFAT**.
-- **exFAT formatting differences:** Some drives formatted on Linux can behave oddly on Windows (and vice versa). If you intend to use the USB across Windows and macOS, formatting the drive as exFAT on **Windows** is usually the safest option.
+Internet access is needed to fetch the catalog, content, and readers. The prepared content is intended to be read offline.
 
-## Why this project exists
+> **Before you start:** Back up the drive. Formatting erases its contents. Check the selected device carefully, and leave enough space for both the content and readers.
 
-Knowledge access is fragile when it depends on stable internet, centralized platforms, and changing policies.
+## What it does
 
-WikiPrepared is designed to help users:
+- Shows removable drives, capacity, free space, and filesystem details.
+- Filters Wikipedia ZIM content by language, topic, and edition (`mini`, `nopic`, `maxi`).
+- Downloads with queueing, progress, pause, resume, and cancellation.
+- Supports downloading directly to USB or saving locally before transferring.
+- Finds installed ZIM files and checks for newer catalog versions.
+- Downloads Kiwix readers and creates portable desktop launchers.
+- Checks SHA-256 against a server checksum when one is available. Otherwise it stores a local checksum and labels the download **unverified**—a locally calculated hash alone does not establish authenticity.
 
-- Preserve critical knowledge offline.
-- Share reproducible knowledge kits across devices and regions.
-- Keep local ownership of educational content and update schedules.
+## Compatibility and current limits
 
-## Current app flow
+- **Builder app:** Linux has published packages. Windows and macOS packaging workflows exist, but public downloads are not yet available.
+- **USB filesystem:** exFAT is recommended for large files shared across desktop platforms. FAT32 cannot hold individual files of 4 GiB or larger. Test the finished stick on the computers you intend to use.
+- **Readers:** Availability and launch behavior vary by operating system. Preparing readers for another platform is not a substitute for testing on that platform.
+- **Maps:** `maps-scaffold/` is experimental, not part of the packaged app. It still has online dependencies and unfinished controls.
+- **Signing:** The release workflow does not currently provide signed Windows or notarized macOS installers. Do not treat an unfamiliar download as trusted just because it uses this project's name.
 
-The current React/Electron flow is step-based:
+This project is actively evolving. The core USB + ZIM workflow is implemented, but polish and testing depth still vary by platform. Reliability and clear failure recovery matter more here than a long feature list.
 
-1. Initial choice (`update existing` vs `create new`).
-2. Drive selection.
-3. Filesystem warning (if needed).
-4. Content and reader configuration.
-5. Download strategy selection (`direct to USB` or `local-first`).
-6. Download progress.
-7. USB transfer progress.
-8. Completion + safe eject options.
+## Development
 
-Main routes are defined in `src/renderer/App.jsx` and `src/renderer/utils/constants.js`.
+Electron, React + MUI, and Node.js. The main process handles drives, files, downloads, and Kiwix integration; the renderer provides the step-by-step UI.
 
-## Tech stack
-
-- Electron (main process + packaging)
-- React + MUI (renderer UI)
-- Node.js services/managers for drives, files, downloads, and Kiwix integration
-- `drivelist`, `axios`, `fs-extra`, `cheerio`, `zustand`
-
-## Development setup
-
-### Prerequisites
-
-- Node.js 18+
-- npm 9+
-- Git
-- Platform permissions for removable drive operations
-
-### Install and run
+Use **Node.js 20** to match the release workflow, plus npm and Git. Native drive dependencies may require your platform's build tools.
 
 ```bash
 git clone https://github.com/coding-crying/WikiPrepared.git
 cd WikiPrepared
-npm install
+npm ci
 npm run dev
 ```
 
-## Scripts
+Useful commands:
 
 ```bash
-npm run dev         # Start Electron app in development
-npm run build       # Build/package (Electron Forge) for current platform
-npm run dist        # Build distributables (electron-builder): AppImage/.deb on Linux
-npm run dist:win    # Distributables for Windows (run on Windows)
-npm run dist:mac    # Distributables for macOS (run on macOS)
-npm run lint        # Lint source
-npm test            # Run tests
+npm run webpack:prod  # Compile production bundles
+npm run dist          # Package with electron-builder for this platform
+npm run dist:win      # Windows distributables; run on Windows
+npm run dist:mac      # macOS distributables; run on macOS
 ```
 
-## USB output structure (portable mode)
+**Quality-check status:** `npm test` currently finds no tests, and `npm run lint` needs an ESLint configuration. The badge above reports release builds, not test coverage. See [Contributing](CONTRIBUTING.md) for verification expectations.
 
-WikiPrepared targets a simple USB layout:
+## Documentation
 
-- `Library/` for `.zim` content
-- `.data/` for reader binaries/assets
-- root launchers for each desktop platform
+- [Documentation index](docs/README.md)
+- [Development setup](docs/DEVELOPMENT.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [Feature inventory and roadmap notes](docs/FEATURES.md)
+- [USB instructions shipped with the app](src/main/assets/README.txt)
 
-User-facing USB guidance is in `src/main/assets/README.txt`.
+Source lives in `src/main/`, `src/renderer/`, and `src/shared/`. Implementation notes and older testing reports live in `docs/`; they describe particular work, not a guarantee about the current release.
 
-## Repository layout
+## Contributing and support
 
-- `src/main/` Electron main process, IPC handlers, managers, services
-- `src/renderer/` React UI screens, components, stores, styles
-- `src/shared/` cross-process constants and IPC channel definitions
-- `docs/` implementation notes, redesign docs, troubleshooting
-  - Start here: `docs/README.md`
+Found a broken download, confusing screen, or a drive that behaves differently? [Open an issue](https://github.com/coding-crying/WikiPrepared/issues/new/choose). Include your operating system, app version, and what happened. Please remove personal paths and other sensitive details from logs.
 
-## Documentation map
+[Contributions](CONTRIBUTING.md) are welcome, especially around cross-platform USB reliability, failure recovery, and download/transfer tests.
 
-- `docs/DEVELOPMENT.md` - developer setup walkthrough
-- `docs/ARCHITECTURE.md` - architecture details
-- `docs/FEATURES.md` - feature inventory and roadmap notes
-- `docs/UI_FLOW_REDESIGN.md` - detailed UX flow specification
-- `docs/LOCAL_TESTING_REPORT.md` - test observations from prior runs
+## Credits and license
 
-## Status
+WikiPrepared builds on [Kiwix](https://kiwix.org), [Wikipedia](https://www.wikipedia.org), and the people who make their content available offline. It is an independent project, not an official Wikimedia or Kiwix application. Content and bundled readers retain their own licenses.
 
-This project is actively evolving. The architecture and UI flow are in place, and the core USB + ZIM workflow is implemented, but polish/testing depth still varies by platform.
+Copyright (C) 2025 WikiPrepared Contributors.
 
-If you are contributing, prioritize:
-
-- cross-platform USB reliability
-- clearer failure recovery and retries
-- end-to-end tests for download/transfer/update flows
-
-## Data sources and dependencies
-
-- Wikipedia/Kiwix ZIM dumps: `https://dumps.wikimedia.org/other/kiwix/zim/wikipedia/`
-- Kiwix downloads: `https://download.kiwix.org/release/`
-
-## Contributing
-
-Contributions are welcome.
-
-1. Open an issue describing the problem or proposal.
-2. Keep changes scoped and test the affected flow.
-3. Update docs when behavior changes.
-
-## Code signing policy
-
-Windows builds are unsigned at this time. If you see a SmartScreen warning,
-choose "More info" → "Run anyway" — or verify the download against the SHA-256
-checksum published with each release.
-
-We are evaluating free code signing through [SignPath.io](https://signpath.io)
-(certificate by SignPath Foundation) for future Windows releases. If adopted,
-this section will carry the statement:
-*"Free code signing provided by SignPath.io, certificate by SignPath Foundation."*
-
-**Team roles** (single-maintainer project): committers, reviewers, and release
-approvers are the repository [Owners](https://github.com/orgs/coding-crying/people).
-
-**Privacy policy:** This program will not transfer any information to other
-networked systems unless specifically requested by the user or the person
-installing or operating it. All network activity (ZIM catalog fetches and
-downloads from Wikimedia/Kiwix servers) is user-initiated and visible in the UI.
-
-## License
-
-GPL-3.0. See `LICENSE`.
+WikiPrepared is free software under the **GNU General Public License, version 3 or later**. See [LICENSE](LICENSE) for the full terms.
