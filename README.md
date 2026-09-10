@@ -13,12 +13,16 @@ Knowledge access is fragile when it depends on stable internet, centralized plat
 
 Choose your content, download it, and prepare a USB drive with Kiwix readers for offline access.
 
+![WikiPrepared welcome screen with a Get Started button and offline USB setup guidance](docs/images/app-welcome.png)
+
+*The welcome screen, captured from the running desktop app built from current source.*
+
 ## Download and get started
 
-**Linux downloads are available now:** [AppImage and Debian package](https://github.com/coding-crying/WikiPrepared/releases/latest). Windows and macOS release downloads are coming soon. Successful CI builds are not the same as published, tested releases.
+**Linux downloads are available now:** [AppImage and Debian package](https://github.com/coding-crying/WikiPrepared/releases/latest). Windows and macOS release downloads are coming soon.
 
 1. Download the Linux package that suits your system. For AppImage, enable **Allow executing file as program** in its file properties, then launch it. For `.deb`, use your package manager.
-2. Plug in a USB drive and choose **create new** or **update existing**.
+2. Click **Get Started** and follow the prompts to select your USB drive and content.
 3. Select your Wikipedia content and the readers you need.
 4. Let the download and transfer finish, then safely eject the drive.
 5. Open the appropriate `START` launcher on the USB. Try it with the internet disconnected before putting the stick away.
@@ -39,13 +43,12 @@ Internet access is needed to fetch the catalog, content, and readers. The prepar
 
 ## Compatibility and current limits
 
-- **Builder app:** Linux has published packages. Windows and macOS packaging workflows exist, but public downloads are not yet available.
 - **USB filesystem:** exFAT is recommended for large files shared across desktop platforms. FAT32 cannot hold individual files of 4 GiB or larger. Test the finished stick on the computers you intend to use.
 - **Readers:** Availability and launch behavior vary by operating system. Preparing readers for another platform is not a substitute for testing on that platform.
 - **Maps:** `maps-scaffold/` is experimental, not part of the packaged app. It still has online dependencies and unfinished controls.
 - **Signing:** The release workflow does not currently provide signed Windows or notarized macOS installers. Do not treat an unfamiliar download as trusted just because it uses this project's name.
 
-This project is actively evolving. The core USB + ZIM workflow is implemented, but polish and testing depth still vary by platform. Reliability and clear failure recovery matter more here than a long feature list.
+Reliability and clear failure recovery matter more here than a long feature list. Cross-platform testing and recovery from interrupted downloads are ongoing priorities.
 
 ## Development
 
@@ -79,7 +82,7 @@ npm run dist:mac      # macOS distributables; run on macOS
 - [Feature inventory and roadmap notes](docs/FEATURES.md)
 - [USB instructions shipped with the app](src/main/assets/README.txt)
 
-Source lives in `src/main/`, `src/renderer/`, and `src/shared/`. Implementation notes and older testing reports live in `docs/`; they describe particular work, not a guarantee about the current release.
+Source lives in `src/main/`, `src/renderer/`, and `src/shared/`. Implementation notes and historical testing reports live in `docs/`.
 
 ## Contributing and support
 

@@ -5,7 +5,7 @@ import ToastContainer from '../common/ToastContainer';
 import '../../styles/animations.css';
 
 // Import logo
-import logoImage from '../../../../Wikiprepared no space.png';
+import logoImage from '../../../../public/images/wikiprepared-wordmark.png';
 
 // Define wizard steps
 const WIZARD_STEPS = [
