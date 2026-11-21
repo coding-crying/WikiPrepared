@@ -299,6 +299,9 @@ function setupIpcHandlers() {
       if (!isAllowedDownloadUrl(zimInfo?.url)) {
         throw new Error(`Download blocked: '${zimInfo?.url || 'missing URL'}' is not an allowed content source.`);
       }
+      if (zimInfo.mirrorUrl && !isAllowedDownloadUrl(zimInfo.mirrorUrl)) {
+        zimInfo = { ...zimInfo, mirrorUrl: undefined };
+      }
       // Destination (if provided) must be a connected USB drive.
       if (destination) {
         await assertPathsInScope('Download destination', destination);

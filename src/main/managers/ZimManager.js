@@ -4,6 +4,9 @@ const fs = require('fs-extra');
 const path = require('path');
 const { app } = require('electron');
 const { URLS, CACHE_SETTINGS, LANGUAGE_CODES } = require('../../shared/constants');
+const zimNames = require('../../shared/zim-names');
+
+const CATALOG_CACHE_SCHEMA = 2;
 
 /**
  * ZimManager - Handles ZIM catalog fetching and management
@@ -99,9 +102,13 @@ class ZimManager {
         const metadata = this.parseZimFilename(filename);
 
         if (metadata.valid) {
+          const mirrorUrl = URLS.WIKIMEDIA_DUMPS + filename;
           zims.push({
             filename,
-            url: URLS.WIKIMEDIA_DUMPS + filename,
+            // download.kiwix.org redirects to the nearest fast mirror (often 5-10x
+            // faster than dumps.wikimedia.org) and also hosts the .sha256 files.
+            url: zimNames.kiwixDownloadUrl(mirrorUrl) || mirrorUrl,
+            mirrorUrl,
             ...metadata,
             size,
             sizeText: this.formatSize(size),
@@ -112,7 +119,9 @@ class ZimManager {
       }
     }
 
-    return zims;
+    // The listing keeps several dated releases of each edition; offering the old
+    // ones made the recommender pick stale archives. Keep only the newest.
+    return zimNames.latestPerSeries(zims);
   }
 
   /**
@@ -135,45 +144,8 @@ class ZimManager {
    * @returns {Object} Parsed metadata
    */
   parseZimFilename(filename) {
-    const metadata = {
-      source: null,
-      language: null,
-      languageName: null,
-      topic: null,
-      scope: null,
-      date: null,
-      valid: false,
-    };
-
-    try {
-      // Remove .zim extension
-      const nameWithoutExt = filename.replace(/\.zim$/i, '');
-
-      // Split by underscore
-      const parts = nameWithoutExt.split('_');
-
-      if (parts.length >= 4) {
-        metadata.source = parts[0]; // e.g., "wikipedia"
-        metadata.language = parts[1]; // e.g., "en"
-        metadata.languageName = LANGUAGE_CODES[parts[1]] || parts[1];
-        metadata.topic = parts[2]; // e.g., "all"
-        metadata.scope = parts[3]; // e.g., "maxi", "nopic", "mini"
-
-        // Date might be in format YYYY-MM
-        if (parts.length >= 5) {
-          const datePart = parts[4];
-          // Validate date format (YYYY-MM)
-          if (/^\d{4}-\d{2}$/.test(datePart)) {
-            metadata.date = datePart;
-          }
-        }
-
-        metadata.valid = true;
-      }
-    } catch (error) {
-      console.warn('Error parsing ZIM filename:', filename, error);
-    }
-
+    const metadata = zimNames.parseZimFilename(filename);
+    metadata.languageName = metadata.language ? (LANGUAGE_CODES[metadata.language] || metadata.language) : null;
     return metadata;
   }
 
@@ -360,6 +332,8 @@ class ZimManager {
       // Try to load from disk
       try {
         const cacheData = fs.readJsonSync(this.cacheFile);
+        // Older caches hold dumps.wikimedia.org URLs and every dated release.
+        if (cacheData.schema !== CATALOG_CACHE_SCHEMA) return false;
         this.catalog = cacheData.catalog || [];
         this.catalogTimestamp = cacheData.timestamp;
       } catch (error) {
@@ -378,6 +352,7 @@ class ZimManager {
   async saveCache() {
     try {
       await fs.writeJson(this.cacheFile, {
+        schema: CATALOG_CACHE_SCHEMA,
         catalog: this.catalog,
         timestamp: this.catalogTimestamp,
       });

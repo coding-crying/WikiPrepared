@@ -6,6 +6,7 @@ const { v4: uuidv4 } = require('uuid');
 const progressStream = require('progress-stream');
 const { app } = require('electron');
 const { DOWNLOAD_STATUS } = require('../../shared/constants');
+const { sha256CandidateUrls } = require('../../shared/zim-names');
 
 /**
  * DownloadManager - Handles file downloads with progress tracking
@@ -58,11 +59,9 @@ class DownloadManager {
   async fetchExpectedSha256ForUrl(url) {
     if (!this.isHttpUrl(url)) return null;
 
-    const candidates = [
-      `${url}.sha256`,      // commonly `${filename}.zim.sha256`
-      `${url}.sha256sum`,
-      `${url}.sha256.txt`,
-    ];
+    // dumps.wikimedia.org (the old default source) publishes no .sha256 at all,
+    // so always ask download.kiwix.org first; it hosts one for every ZIM.
+    const candidates = sha256CandidateUrls(url);
 
     for (const checksumUrl of candidates) {
       try {
@@ -488,14 +487,25 @@ class DownloadManager {
         requestHeaders['Range'] = `bytes=${resumeFrom}-`;
       }
 
-      const response = await axios({
+      const requestDownload = (url) => axios({
         method: 'get',
-        url: download.url,
+        url,
         responseType: 'stream',
         cancelToken: source.token,
         timeout: 30000,
         headers: requestHeaders,
       });
+      let response;
+      try {
+        response = await requestDownload(download.url);
+      } catch (primaryError) {
+        // download.kiwix.org can hand out a mirror that is down or not yet
+        // synced; fall back to the Wikimedia mirror before giving up.
+        const fallbackUrl = download.zimInfo?.mirrorUrl;
+        if (axios.isCancel(primaryError) || !fallbackUrl || fallbackUrl === download.url) throw primaryError;
+        console.warn(`Primary download failed (${primaryError.message}); retrying via ${fallbackUrl}`);
+        response = await requestDownload(fallbackUrl);
+      }
 
       // If the server ignored our Range request and returns 200 instead of
       // 206, we must not append duplicate bytes — truncate and restart.
@@ -638,6 +648,11 @@ class DownloadManager {
       } else {
         download.status = DOWNLOAD_STATUS.ERROR;
         download.error = error.message;
+        if (String(error.message).startsWith('Checksum verification failed')) {
+          // A complete-but-corrupt file must not be "resumed" (nothing left to
+          // fetch); delete it so a retry downloads clean bytes.
+          try { await fs.remove(download.destination); } catch (_e) { /* ignore */ }
+        }
         // Keep the partial file: resume can continue from it via HTTP Range
         // instead of throwing away gigabytes. (Wipe it via Cancel or
         // Clear Cache if the user wants the space back.)

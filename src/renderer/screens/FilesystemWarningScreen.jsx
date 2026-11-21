@@ -80,7 +80,7 @@ export default function FilesystemWarningScreen() {
     return null;
   }
 
-  const isFAT32 = selectedDrive.filesystem === FILESYSTEMS.FAT32;
+  const isFAT32 = ['fat32', 'vfat'].includes(String(selectedDrive.filesystem || '').toLowerCase());
 
   return (
     <AppLayout title="Prepare USB Stick" currentStep={1}>

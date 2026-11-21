@@ -480,6 +480,7 @@ export default function DownloadProgressScreen() {
 
         const result = await window.electronAPI.invoke('download:add', {
           url: zim.url,
+          mirrorUrl: zim.mirrorUrl,
           filename: zim.filename,
           size: zim.size
         }, zimDestination);
