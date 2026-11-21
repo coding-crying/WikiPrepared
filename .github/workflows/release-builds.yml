@@ -40,7 +40,10 @@ jobs:
               dist/latest.yml
           - label: macOS
             os: macos-latest
-            script: npm run dist:mac -- --publish never
+            # No Developer ID yet: ad-hoc sign ("-") so Apple Silicon shows the normal
+            # "unidentified developer -> Open Anyway" prompt instead of "app is damaged".
+            # Replace with a real identity once the Apple Developer cert exists.
+            script: npm run dist:mac -- --publish never -c.mac.identity=-
             artifacts: |
               dist/*.dmg
               dist/*.zip
@@ -67,6 +70,37 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
         run: ${{ matrix.script }}
+
+      - name: Verify macOS bundle signature and launch it
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          for app in dist/mac*/WikiPrepared.app; do
+            echo "== $app"
+            codesign --verify --deep --strict --verbose=2 "$app"
+            codesign -dv "$app" 2>&1 | grep -E 'Signature|Identifier|flags' || true
+            lipo -archs "$app/Contents/MacOS/WikiPrepared"
+            find "$app" -name '*.node' -exec lipo -archs {} \;
+          done
+          app="dist/mac-arm64/WikiPrepared.app"
+          [ -d "$app" ] || app="$(ls -d dist/mac*/WikiPrepared.app | head -1)"
+          "$app/Contents/MacOS/WikiPrepared" > smoke.log 2>&1 &
+          pid=$!
+          sleep 25
+          if kill -0 "$pid" 2>/dev/null; then echo "App still running after 25 s"; kill "$pid"; else echo "App exited early"; cat smoke.log; exit 1; fi
+          grep -iE 'ready|error' smoke.log | head -20 || true
+
+      - name: Launch Windows portable build
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem dist/win-unpacked/WikiPrepared.exe
+          $p = Start-Process -FilePath $exe.FullName -PassThru
+          Start-Sleep -Seconds 25
+          if ($p.HasExited) { Write-Error "App exited early with code $($p.ExitCode)"; exit 1 }
+          Write-Host "App still running after 25 s"
+          Stop-Process -Id $p.Id -Force
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
