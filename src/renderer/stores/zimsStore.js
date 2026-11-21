@@ -46,7 +46,11 @@ export const useZimsStore = create(
         const { catalog, selectedLanguage } = get();
         return catalog
           .filter(zim => zim.language === selectedLanguage)
-          .sort((a, b) => b.size - a.size); // Sort by size descending
+          .sort((a, b) => (a.filename || '').localeCompare(
+            b.filename || '',
+            undefined,
+            { sensitivity: 'base', numeric: true },
+          )); // Keep the catalog order understandable and alphabetical
       },
 
       getAvailableLanguages: () => {

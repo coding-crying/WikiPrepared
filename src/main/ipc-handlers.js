@@ -18,7 +18,7 @@ const kiwixManager = new KiwixManager();
 const updateService = new UpdateService();
 const fileService = new FileService();
 const usbAuditService = new USBAuditService();
-const USB_LIBRARY_DIRNAME = 'Library (.zim files)';
+const USB_LIBRARY_DIRNAME = 'Library';
 
 // Cooperative cancellation flag for the current TRANSFER_START operation.
 // Checked between files and between stream chunks; reset at transfer start.
@@ -107,7 +107,7 @@ function getUsbRootFromDownloadDestination(destination) {
   const normalized = path.normalize(destination);
   const candidates = [
     `${path.sep}${USB_LIBRARY_DIRNAME}${path.sep}`,
-    `${path.sep}Library${path.sep}`,
+    `${path.sep}Library (.zim files)${path.sep}`, // legacy builds
   ];
 
   const librarySegment = candidates.find((segment) => normalized.includes(segment));
@@ -483,7 +483,9 @@ function setupIpcHandlers() {
 
       // Get all files in download directory
       const files = await fs.readdir(downloadDir);
-      let zimFiles = files.filter(f => f.endsWith('.zim'));
+      let zimFiles = files
+        .filter(f => f.endsWith('.zim'))
+        .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base', numeric: true }));
 
       // If specific files were requested, filter the list
       if (filesToTransfer && Array.isArray(filesToTransfer) && filesToTransfer.length > 0) {

@@ -5,7 +5,7 @@ const AdmZip = require('adm-zip');
 const { app } = require('electron');
 const { KIWIX_PLATFORMS, URLS } = require('../../shared/constants');
 const PlatformLauncherService = require('../services/PlatformLauncherService');
-const USB_LIBRARY_DIRNAME = 'Library (.zim files)';
+const USB_LIBRARY_DIRNAME = 'Library';
 
 /**
  * KiwixManager - Handles Kiwix reader downloads and installation with caching
@@ -550,9 +550,12 @@ class KiwixManager {
         downloadResult = await this.downloadReader(platform, null, onProgress);
       }
 
-      // Create hidden .data directory on USB
+      // Create the hidden reader data directory on USB
       const dataDir = path.join(usbPath, '.data');
       await fs.ensureDir(dataDir);
+      // Keep the root structure aligned with the shipped README even when
+      // the user installs readers before selecting any ZIM content.
+      await fs.ensureDir(path.join(usbPath, USB_LIBRARY_DIRNAME));
 
       let installPath;
 
@@ -564,16 +567,16 @@ class KiwixManager {
         installPath = winDir;
 
       } else if (platform === KIWIX_PLATFORMS.LINUX) {
-        // Linux - copy AppImage to root with consistent naming
-        const targetPath = path.join(usbPath, 'START - Linux.AppImage');
+        // Linux - keep the AppImage in .data; START - Linux.sh is the launcher.
+        const targetPath = path.join(dataDir, 'kiwix-linux.AppImage');
         await fs.copy(downloadResult.path, targetPath);
-        await fs.chmod(targetPath, 0o755);
+        await this.platformLauncherService.makeExecutable(targetPath);
         installPath = targetPath;
-        console.log('Made Linux AppImage executable');
+        console.log('Copied Linux AppImage; executable permissions requested');
 
       } else if (platform === KIWIX_PLATFORMS.MAC) {
-        // Mac - keep the installer visible in the USB root.
-        const targetPath = path.join(usbPath, 'Install Kiwix for Mac.dmg');
+        // Mac - keep the installer in .data; START - Mac.command is the launcher.
+        const targetPath = path.join(dataDir, 'kiwix-macos.dmg');
         await fs.copy(downloadResult.path, targetPath);
         installPath = targetPath;
 

@@ -1,7 +1,8 @@
 const fs = require('fs-extra');
 const crypto = require('crypto');
 const path = require('path');
-const USB_LIBRARY_DIRNAME = 'Library (.zim files)';
+const PlatformLauncherService = require('./PlatformLauncherService');
+const USB_LIBRARY_DIRNAME = 'Library';
 
 /**
  * FileService - Handles file operations
@@ -165,11 +166,19 @@ class FileService {
     // Create the visible folder that holds ZIM content
     await fs.ensureDir(path.join(usbPath, USB_LIBRARY_DIRNAME));
 
-    // Copy Windows launcher
-    const batSource = this.getAssetPath('START - Windows.bat');
-    const batDest = path.join(usbPath, 'START - Windows.bat');
-    await fs.copy(batSource, batDest);
-    console.log('Copied Windows launcher');
+    // Copy the platform launchers described by the USB README.
+    for (const launcher of ['START - Windows.bat', 'START - Mac.command']) {
+      const launcherSource = this.getAssetPath(launcher);
+      const launcherDest = path.join(usbPath, launcher);
+      await fs.copy(launcherSource, launcherDest);
+      if (launcher !== 'START - Windows.bat') {
+        await new PlatformLauncherService().makeExecutable(launcherDest);
+      }
+      console.log(`Copied ${launcher}`);
+    }
+    const linuxLaunchers = new PlatformLauncherService();
+    linuxLaunchers.getAssetPath = (name) => this.getAssetPath(name);
+    await linuxLaunchers.copyLinuxLaunchers(usbPath);
 
     // Copy README
     const readmeSource = this.getAssetPath('README.txt');
@@ -206,19 +215,19 @@ class FileService {
 
       case 'macos':
       case 'mac': {
-        // Mac - keep the installer visible in the USB root.
-        const destFile = path.join(usbPath, 'Install Kiwix for Mac.dmg');
+        // Mac installer stays in the hidden reader data directory.
+        const destFile = path.join(dataDir, 'kiwix-macos.dmg');
         await fs.copy(sourcePath, destFile);
         console.log(`Copied Mac installer to: ${destFile}`);
         break;
       }
 
       case 'linux': {
-        // Linux - single .appimage file to .data/
+        // Linux - single AppImage in the hidden reader data directory.
         const destFile = path.join(dataDir, 'kiwix-linux.AppImage');
         await fs.copy(sourcePath, destFile);
         // Make executable
-        await fs.chmod(destFile, 0o755);
+        await new PlatformLauncherService().makeExecutable(destFile);
         console.log(`Copied Linux AppImage to: ${destFile}`);
         break;
       }
@@ -310,8 +319,9 @@ class FileService {
     // Check for launchers
     const launcherFiles = [
       'START - Windows.bat',
-      'START - Linux.AppImage',
-      'Install Kiwix for Mac.dmg',
+      'START - Mac.command',
+      'START - Linux.sh',
+      'Open WikiPrepared.desktop',
       'README.txt'
     ];
     for (const launcher of launcherFiles) {
@@ -329,20 +339,16 @@ class FileService {
         summary.readers.push({ name: 'kiwix-windows/', platform: 'windows' });
       }
 
-      // Check Mac DMG (new visible root location first, then legacy hidden path)
-      const macFile = await fs.pathExists(path.join(usbPath, 'Install Kiwix for Mac.dmg'))
-        ? path.join(usbPath, 'Install Kiwix for Mac.dmg')
-        : path.join(dataDir, 'kiwix-macos.dmg');
+      // Check Mac DMG in the hidden reader data directory.
+      const macFile = path.join(dataDir, 'kiwix-macos.dmg');
       if (await fs.pathExists(macFile)) {
         const stats = await fs.stat(macFile);
         summary.readers.push({ name: path.basename(macFile), size: stats.size, platform: 'macos' });
         summary.totalSize += stats.size;
       }
 
-      // Check Linux AppImage (new visible root location first, then legacy hidden path)
-      const linuxFile = await fs.pathExists(path.join(usbPath, 'START - Linux.AppImage'))
-        ? path.join(usbPath, 'START - Linux.AppImage')
-        : path.join(dataDir, 'kiwix-linux.AppImage');
+      // Check Linux AppImage in the hidden reader data directory.
+      const linuxFile = path.join(dataDir, 'kiwix-linux.AppImage');
       if (await fs.pathExists(linuxFile)) {
         const stats = await fs.stat(linuxFile);
         summary.readers.push({ name: path.basename(linuxFile), size: stats.size, platform: 'linux' });
@@ -361,13 +367,13 @@ class FileService {
     // Check ZIM files in the visible USB library folder
     const libraryFolder = path.join(usbPath, USB_LIBRARY_DIRNAME);
     if (await fs.pathExists(libraryFolder)) {
-      const files = await fs.readdir(libraryFolder);
+      const files = (await fs.readdir(libraryFolder))
+        .filter((file) => file.endsWith('.zim'))
+        .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base', numeric: true }));
       for (const file of files) {
-        if (file.endsWith('.zim')) {
-          const stats = await fs.stat(path.join(libraryFolder, file));
-          summary.zimFiles.push({ name: file, size: stats.size });
-          summary.totalSize += stats.size;
-        }
+        const stats = await fs.stat(path.join(libraryFolder, file));
+        summary.zimFiles.push({ name: file, size: stats.size });
+        summary.totalSize += stats.size;
       }
     }
 

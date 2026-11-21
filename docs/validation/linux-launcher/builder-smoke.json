@@ -1,0 +1,7 @@
+{
+  "renderer": "file:///tmp/wikiprepared-linux-qa/builder-dist/linux-unpacked/resources/app.asar/build/renderer/index.html",
+  "text": "Put Wikipedia on a USB stick\n\nOnce set up, your USB stick works anywhere without internet.\n\nGet Started\n\nNote: Full Wikipedia can take 10-20 hours to download.\n\nKeep this software running during the download.\n\nSlow internet? Buy a premade USB stick\n\nwikiprepared.com\n\n\u2022\n\nSupport the Project",
+  "screenshot": "/tmp/wikiprepared-linux-qa/builder-final.png",
+  "assets_match_source": true,
+  "exit_code": 0
+}

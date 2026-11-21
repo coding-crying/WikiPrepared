@@ -4,18 +4,25 @@ const { exec } = require('child_process');
 const util = require('util');
 const { pathToFileURL } = require('url');
 const execPromise = util.promisify(exec);
-const USB_LIBRARY_DIRNAME = 'Library (.zim files)';
+const USB_LIBRARY_DIRNAME = 'Library';
 
 /**
  * PlatformLauncherService - Creates platform-specific launchers
  *
  * New clean structure:
  * - Readers hidden in .data/ folder
- * - Windows keeps a small launcher to find the portable EXE
- * - Linux AppImage and macOS DMG stay visible in the USB root
+ * - Platform launchers stay visible in the USB root
  * - Android APK stays visible in the USB root
  */
 class PlatformLauncherService {
+  getAssetPath(filename) {
+    if (process.env.NODE_ENV === 'development') {
+      return path.join(__dirname, '../assets', filename);
+    }
+
+    return path.join(process.resourcesPath, 'assets', filename);
+  }
+
   escapeXml(value) {
     return String(value)
       .replace(/&/g, '&amp;')
@@ -38,6 +45,23 @@ class PlatformLauncherService {
       console.log('Created Windows launcher');
     } catch (error) {
       console.log('Windows launcher creation failed:', error.message);
+    }
+
+    try {
+      await this.copyLinuxLaunchers(usbPath);
+    } catch (error) {
+      console.warn('Linux launcher creation failed:', error.message);
+    }
+
+    for (const launcher of ['START - Mac.command']) {
+      try {
+        const launcherPath = path.join(usbPath, launcher);
+        await fs.copy(this.getAssetPath(launcher), launcherPath);
+        await fs.chmod(launcherPath, 0o755);
+        console.log(`Created ${launcher}`);
+      } catch (error) {
+        console.log(`${launcher} creation failed:`, error.message);
+      }
     }
 
     try {
@@ -101,79 +125,28 @@ exit /b 0
   async createReadme(usbPath) {
     const readmePath = path.join(usbPath, 'README.txt');
 
-    const content = `WIKIPREPARED - Offline Wikipedia USB
-=====================================
-
-This USB contains Wikipedia content that works offline on any device.
-
-
-WINDOWS
--------
-Double-click "START - Windows.bat" to launch the reader.
-Your offline library should appear automatically.
-
-
-MAC
----
-1. Double-click "Install Kiwix for Mac.dmg"
-2. Drag Kiwix to Applications
-3. Open Kiwix and drag files from the "${USB_LIBRARY_DIRNAME}" folder into it
-
-
-LINUX
------
-1. Right-click "START - Linux.AppImage" > Properties > Permissions
-2. Check "Allow executing file as program"
-3. Double-click to run, or run from terminal:
-   ./"START - Linux.AppImage"
-4. In Kiwix, open files from the "${USB_LIBRARY_DIRNAME}" folder
-
-
-ANDROID
--------
-1. Copy "Install on Android.apk" to your phone
-2. Open the APK to install Kiwix
-3. Copy files from the "${USB_LIBRARY_DIRNAME}" folder to your phone
-4. Open Kiwix and browse to the files
-
-
-ADDING CONTENT TO KIWIX
------------------------
-On Windows, WikiPrepared tries to prebuild the Kiwix portable library.
-If the content does not appear automatically, open files manually from
-the "${USB_LIBRARY_DIRNAME}" folder.
-
-
-Created with WikiPrepared - wikiprepared.com
-`;
-
-    await fs.writeFile(readmePath, content);
+    // Keep the generated guide identical to the bundled source guide.
+    await fs.copy(this.getAssetPath('README.txt'), readmePath);
     console.log('✓ Created README');
   }
 
-  /**
-   * Create a .desktop file for Linux desktop environments
-   * This is optional - the shell script works everywhere
-   * @param {string} usbPath - USB drive path
-   */
-  async createLinuxDesktopFile(usbPath) {
-    const desktopPath = path.join(usbPath, 'Kiwix Reader.desktop');
+  // FAT/exFAT and cross-platform copies may not support persistent Unix modes.
+  // Keep the copied files and document the fallback, never change mount policy.
+  async makeExecutable(filePath) {
+    try {
+      await fs.chmod(filePath, 0o755);
+    } catch (error) {
+      if (!['EPERM', 'EACCES', 'ENOTSUP', 'EROFS'].includes(error.code)) throw error;
+      console.warn(`Could not set executable permission on ${path.basename(filePath)}; use the Linux instructions in README.txt.`);
+    }
+  }
 
-    const desktopContent = `[Desktop Entry]
-Version=1.0
-Type=Application
-Name=Kiwix Reader (WikiPrepared)
-Comment=Launch Kiwix Offline Wikipedia Reader
-Exec=bash -c 'cd "$(dirname "%k")" && ./"START - Linux.AppImage" 2>/dev/null'
-Icon=kiwix
-Terminal=false
-Categories=Education;
-Keywords=wikipedia;offline;kiwix;
-StartupNotify=true
-`;
-
-    await fs.writeFile(desktopPath, desktopContent, { mode: 0o755 });
-    console.log('✓ Created Linux .desktop file');
+  async copyLinuxLaunchers(usbPath) {
+    for (const name of ['START - Linux.sh', 'Open WikiPrepared.desktop']) {
+      const target = path.join(usbPath, name);
+      await fs.copy(this.getAssetPath(name), target);
+      await this.makeExecutable(target);
+    }
   }
 
   /**
@@ -188,7 +161,9 @@ StartupNotify=true
     try {
       // Find all .zim files in the visible USB library folder.
       const files = await fs.readdir(libraryPath);
-      const zimFiles = files.filter(f => f.endsWith('.zim'));
+      const zimFiles = files
+        .filter(f => f.endsWith('.zim'))
+        .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base', numeric: true }));
 
       if (zimFiles.length === 0) {
         console.log('No ZIM files found, skipping library.xml creation');

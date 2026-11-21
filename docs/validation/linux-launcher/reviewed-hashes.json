@@ -1,0 +1,13 @@
+{
+  "src/main/assets/START - Linux.sh": "5f98e216bdc6d95649419eaaab62c938cbb7beb14c41676349936d0c0b78f864",
+  "src/main/assets/README.txt": "70031116dced056a12d6de4de8f99846f5b0c1e6e7afd8c0ebc4b462d9696f8c",
+  "src/main/services/PlatformLauncherService.js": "b3d36404841e64fa1098d0451c217e9c8c7f35888ce391e7d34cd15e85ee8b24",
+  "src/main/services/FileService.js": "4099e4fb51ef821e018101eed128e8afecca35038bbcc64a1862ad685f546bc8",
+  "src/main/managers/KiwixManager.js": "9a0a699d5c0bf5dd92357b2fcf48c4caa98a9f5c36c88e1943eca87f7f99cf14",
+  "src/main/assets/Open WikiPrepared.desktop": "93bf53c3b2f73f14913a484ac5225a26c044572c64d7b869b2351128a9a3314e",
+  "tests/linux-launcher.test.js": "533d9756a98b403ada8a47c05ca87d9e3e7811eb2d7bf01d094bf988e6987184",
+  "tests/desktop-entry-integration.py": "dcb6922b02efa3d230fad64cc2a88db5fa6de97af0f23dc286d9717e7e9c4f50",
+  "tests/linux-noexec-integration.py": "53edb487b23e682d100cdbdc5163f027b281416452d06fc6e1804f554dc78b76",
+  "tests/linux-terminal-lifecycle.py": "5ddc7c9056dea0a65e85c153044d210fd2e530dc0cc87322da5ddf8c38e887fe",
+  "tests/linux-cache-integration.py": "661081757aa2845cdc8fd34cf03d6e36c31ba41a85a7d1c4ee68f299cd5ceefd"
+}

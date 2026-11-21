@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Open WikiPrepared
+Comment=Read the offline library on this USB
+Exec=python3 -c "import os,sys; from urllib.parse import urlsplit,unquote; p=sys.argv[1] if len(sys.argv)>1 else os.environ.get('GIO_LAUNCHED_DESKTOP_FILE',''); u=urlsplit(p) if p.startswith('file:') else None; valid=not u or (u.scheme=='file' and u.netloc in ('','localhost')); p=unquote(u.path) if u and valid else p; script=os.path.join(os.path.dirname(p),'START - Linux.sh'); (valid and os.path.isabs(p) and os.path.isfile(script)) or (input('Cannot locate the USB launcher. Open a terminal in the USB folder and use the Bash command in README.txt. Press Enter to close.'),sys.exit(1)); os.execv('/bin/bash',['bash',script])" %k
+Icon=accessories-dictionary
+Terminal=true
+Categories=Education;
+StartupNotify=false

@@ -1,0 +1,10 @@
+{
+  "passed": true,
+  "security_concerns": [],
+  "logic_errors": [],
+  "suggestions": [
+    "src/main/assets/START - Linux.sh, start_reader(): The approximately two-second observation window detects early failures, not successful GUI initialization. A later failure—including a delayed FUSE failure—will only reach the log and will not trigger extraction. Consider documenting this boundary and adding a delayed-failure fixture so the behavior remains explicit.",
+    "tests/linux-cache-integration.py: Add a cache-invalidation case that changes the AppImage contents after the first successful extraction. Verify that the next launch creates and uses a new digest-specific cache while leaving the previous cache untouched. Current coverage establishes concurrent publication, reuse, and invalid-cache handling, but not replacement-reader invalidation."
+  ],
+  "summary": "No blocking defects identified in the supplied implementation. The desktop entry passes the launcher location as data rather than interpolating shell code; Bash preserves argument boundaries and respects noexec; extraction uses a lock and staging directory; and reader startup separates the reader session from the terminal. The FileService Mac chmod change addresses the reported interruption before Linux launcher copying. This was a static review only; no tools or tests were executed."
+}

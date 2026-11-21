@@ -29,7 +29,7 @@ import { useToastStore } from '../stores/toastStore';
 import AppLayout from '../components/layout/AppLayout';
 import { ROUTES, DOWNLOAD_STRATEGIES } from '../utils/constants';
 import { formatBytes, formatSpeed, formatDuration } from '../utils/formatters';
-const USB_LIBRARY_DIRNAME = 'Library (.zim files)';
+const USB_LIBRARY_DIRNAME = 'Library';
 
 /**
  * Individual download item component
